@@ -58,6 +58,9 @@ const statusClass: Record<string, string> = {
 }
 
 const activeOrders = computed(() => (event.value?.orders ?? []).filter((o) => o.status !== 'cancelled'))
+const importMsgClass = computed(() =>
+  /fail|error/i.test(importMsg.value) ? 'text-red-700' : 'text-emerald-700',
+)
 
 function formatDate(value?: string | null) {
   if (!value) return '—'
@@ -228,7 +231,7 @@ onMounted(load)
           <h2 class="font-semibold mb-2">Upload Google Form export</h2>
           <p class="text-sm text-muted mb-3">CSV or XLSX. Upload again anytime — existing responses are updated, not duplicated.</p>
           <input type="file" accept=".csv,.xlsx,.txt" :disabled="importing" @change="onUpload" />
-          <p v-if="importMsg" class="text-sm mt-3" :class="/fail|error/i.test(importMsg) ? 'text-red-700' : 'text-emerald-700'">{{ importMsg }}</p>
+          <p v-if="importMsg" class="text-sm mt-3" :class="importMsgClass">{{ importMsg }}</p>
         </div>
         <div class="bg-white rounded-xl p-5 shadow-sm">
           <h2 class="font-semibold mb-2">Confirmation template</h2>
