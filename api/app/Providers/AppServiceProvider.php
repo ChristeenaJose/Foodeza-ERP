@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Support\EnsureGoogleFormOrderTables;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\ServiceProvider;
 
@@ -55,16 +56,23 @@ class AppServiceProvider extends ServiceProvider
      */
     private function ensureDesktopSchema(): void
     {
-        if (self::$ranDesktopMigrations || ! env('FOODEZA_DATA_DIR')) {
+        if (self::$ranDesktopMigrations) {
             return;
         }
 
         self::$ranDesktopMigrations = true;
 
+        // Only for the desktop data directory DB — never during phpunit :memory: tests.
+        if (! env('FOODEZA_DATA_DIR')) {
+            return;
+        }
+
         try {
             Artisan::call('migrate', ['--force' => true]);
+            // Direct create if migrate was skipped (older migration already recorded).
+            EnsureGoogleFormOrderTables::run();
         } catch (\Throwable) {
-            // Ignore during early boot / tests without a writable DB.
+            // Ignore during early boot without a writable DB.
         }
     }
 }
