@@ -16,14 +16,6 @@ type OrderRow = {
   customer?: { name?: string; phone?: string; email?: string } | null
 }
 
-type UpdateRow = {
-  id: number
-  title?: string | null
-  message: string
-  last_sent_at?: string | null
-  created_at?: string
-}
-
 type EventDetail = {
   id: number
   name: string
@@ -34,7 +26,6 @@ type EventDetail = {
   confirmation_template: string
   notes?: string | null
   orders: OrderRow[]
-  updates: UpdateRow[]
 }
 
 const route = useRoute()
@@ -45,91 +36,11 @@ const error = ref('')
 const statuses = ref<Record<string, string>>({})
 const importing = ref(false)
 const importMsg = ref('')
-const updateTitle = ref('')
-const updateMessage = ref('')
-const savingUpdate = ref(false)
 const sending = ref(false)
 const sendMsg = ref('')
 const editingTemplate = ref(false)
 const templateDraft = ref('')
 const savingTemplate = ref(false)
-
-type SendLink = {
-  order_id: number
-  reference?: string
-  name?: string | null
-  phone?: string
-  phone_display?: string
-  message?: string
-  url: string
-  sms_url?: string
-}
-
-const bulkPanel = ref(false)
-const bulkPanelEl = ref<HTMLElement | null>(null)
-const bulkLinks = ref<SendLink[]>([])
-const bulkMissing = ref(0)
-/** 0-based index of the current recipient in the step-through queue */
-const bulkIndex = ref(0)
-const bulkDoneIds = ref<number[]>([])
-const bulkSkippedIds = ref<number[]>([])
-const bulkKind = ref<'confirmations' | 'update'>('confirmations')
-const bulkHeading = computed(() =>
-  bulkKind.value === 'update' ? 'Send update to all — one number at a time' : 'Send confirmations to all — one number at a time',
-)
-
-const bulkCurrent = computed(() => bulkLinks.value[bulkIndex.value] ?? null)
-const bulkTotal = computed(() => bulkLinks.value.length)
-const bulkProgress = computed(() => `${Math.min(bulkIndex.value + 1, bulkTotal.value)} / ${bulkTotal.value}`)
-const bulkFinished = computed(() => bulkIndex.value >= bulkLinks.value.length)
-
-function openBulkQueue(links: SendLink[], missing: number, kind: 'confirmations' | 'update') {
-  bulkLinks.value = links
-  bulkMissing.value = missing
-  bulkIndex.value = 0
-  bulkDoneIds.value = []
-  bulkSkippedIds.value = []
-  bulkKind.value = kind
-  bulkPanel.value = true
-  sendMsg.value =
-    kind === 'update'
-      ? `${links.length} numbers for this update. Open WhatsApp/SMS → send → Next number.`
-      : `${links.length} numbers ready. Open WhatsApp/SMS → send → Next number.`
-  requestAnimationFrame(() => {
-    bulkPanelEl.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-  })
-}
-
-function downloadSendListCsv() {
-  if (!bulkLinks.value.length) return
-  const header = ['name', 'phone', 'reference', 'whatsapp_url', 'sms_url', 'message']
-  const rows = bulkLinks.value.map((l) =>
-    [l.name ?? '', l.phone_display || l.phone || '', l.reference ?? '', l.url, l.sms_url ?? '', l.message ?? '']
-      .map((cell) => `"${String(cell).replace(/"/g, '""')}"`)
-      .join(','),
-  )
-  const blob = new Blob([[header.join(','), ...rows].join('\n')], { type: 'text/csv;charset=utf-8' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `foodeza-${bulkKind.value}-send-list.csv`
-  document.body.appendChild(a)
-  a.click()
-  a.remove()
-  URL.revokeObjectURL(url)
-  sendMsg.value = 'Downloaded send list CSV (phone + message + WhatsApp/SMS links). Use for broadcast tools or manual send.'
-}
-
-async function copyAllPhones() {
-  const phones = bulkLinks.value.map((l) => l.phone_display || l.phone).filter(Boolean).join('\n')
-  if (!phones) return
-  try {
-    await navigator.clipboard.writeText(phones)
-    sendMsg.value = `Copied ${bulkLinks.value.length} phone number(s) to clipboard.`
-  } catch {
-    sendMsg.value = 'Could not copy phones. Download CSV instead.'
-  }
-}
 
 const statusClass: Record<string, string> = {
   new: 'bg-amber-100 text-amber-800',
@@ -138,7 +49,6 @@ const statusClass: Record<string, string> = {
   cancelled: 'bg-red-100 text-red-700',
 }
 
-const activeOrders = computed(() => (event.value?.orders ?? []).filter((o) => o.status !== 'cancelled'))
 const importMsgClass = computed(() =>
   /fail|error/i.test(importMsg.value) ? 'text-red-700' : 'text-emerald-700',
 )
@@ -171,7 +81,7 @@ async function saveTemplate() {
       confirmation_template: templateDraft.value,
       notes: event.value.notes ?? null,
     })
-    event.value = { ...event.value, ...data, orders: event.value.orders, updates: event.value.updates }
+    event.value = { ...event.value, ...data, orders: event.value.orders }
     editingTemplate.value = false
   } catch (e: any) {
     sendMsg.value = e?.response?.data?.message ?? 'Could not save template.'
@@ -311,11 +221,6 @@ async function openExternalUrl(url: string) {
   }
 }
 
-function linkForChannel(link: SendLink, channel: 'whatsapp' | 'sms') {
-  if (channel === 'sms') return link.sms_url || `sms:+${link.phone}&body=${encodeURIComponent(link.message || '')}`
-  return link.url
-}
-
 async function markConfirmationsSent(orderIds: number[]) {
   if (!orderIds.length) return
   await api.post(`/google-form-order-events/${eventId.value}/send-confirmations`, {
@@ -339,126 +244,10 @@ async function openWhatsApp(order: OrderRow) {
         // optional
       }
     }
-    sendMsg.value = `Opened WhatsApp for ${to}. If not sent, Edit → uncheck “WhatsApp message sent”, or use SMS from Send to all.`
+    sendMsg.value = `Opened WhatsApp for ${to}. If not sent, Edit → uncheck “WhatsApp message sent”.`
     await load()
   } catch (e: any) {
     sendMsg.value = e?.response?.data?.message ?? 'Could not open WhatsApp.'
-  } finally {
-    sending.value = false
-  }
-}
-
-async function sendConfirmationsAll() {
-  if (!event.value) return
-  sending.value = true
-  sendMsg.value = ''
-  try {
-    const { data } = await api.post(`/google-form-order-events/${event.value.id}/send-confirmations`, {
-      mark_sent: false,
-    })
-    const links = (data.links ?? []) as SendLink[]
-    const missing = data.missing_phone?.length ?? 0
-    if (!links.length) {
-      sendMsg.value = `No phone numbers to message.${missing ? ` ${missing} missing phone.` : ''}`
-      return
-    }
-    openBulkQueue(links, missing, 'confirmations')
-  } catch (e: any) {
-    sendMsg.value = e?.response?.data?.message ?? 'Could not prepare messages.'
-  } finally {
-    sending.value = false
-  }
-}
-
-function closeBulkPanel() {
-  bulkPanel.value = false
-}
-
-async function openCurrentBulk(channel: 'whatsapp' | 'sms') {
-  const link = bulkCurrent.value
-  if (!link) return
-  sending.value = true
-  try {
-    await openExternalUrl(linkForChannel(link, channel))
-    await markConfirmationsSent([link.order_id])
-    if (!bulkDoneIds.value.includes(link.order_id)) {
-      bulkDoneIds.value = [...bulkDoneIds.value, link.order_id]
-    }
-    sendMsg.value = `Opened ${channel === 'sms' ? 'SMS' : 'WhatsApp'} for ${link.name || link.phone_display || link.phone}. Send the message, then click Next number.`
-    await load()
-  } catch (e: any) {
-    sendMsg.value = e?.response?.data?.message ?? 'Could not open chat.'
-  } finally {
-    sending.value = false
-  }
-}
-
-function skipCurrentBulk() {
-  const link = bulkCurrent.value
-  if (!link) return
-  if (!bulkSkippedIds.value.includes(link.order_id)) {
-    bulkSkippedIds.value = [...bulkSkippedIds.value, link.order_id]
-  }
-  goNextBulk()
-}
-
-function goNextBulk() {
-  if (bulkIndex.value < bulkLinks.value.length) {
-    bulkIndex.value += 1
-  }
-  if (bulkFinished.value) {
-    sendMsg.value = `Done: ${bulkDoneIds.value.length} opened, ${bulkSkippedIds.value.length} skipped, of ${bulkTotal.value}.`
-  } else {
-    const next = bulkCurrent.value
-    sendMsg.value = `Next (${bulkProgress.value}): ${next?.name || next?.phone_display || next?.phone || ''}`
-  }
-}
-
-function goPrevBulk() {
-  if (bulkIndex.value > 0) bulkIndex.value -= 1
-}
-
-async function createUpdate() {
-  if (!event.value || !updateMessage.value.trim()) return
-  savingUpdate.value = true
-  try {
-    const { data } = await api.post(`/google-form-order-events/${event.value.id}/updates`, {
-      title: updateTitle.value || null,
-      message: updateMessage.value,
-    })
-    event.value.updates = [data, ...(event.value.updates ?? [])]
-    updateTitle.value = ''
-    updateMessage.value = ''
-  } finally {
-    savingUpdate.value = false
-  }
-}
-
-async function sendUpdate(update: UpdateRow) {
-  if (!event.value) return
-  sending.value = true
-  sendMsg.value = ''
-  try {
-    const { data } = await api.post(
-      `/google-form-order-events/${event.value.id}/updates/${update.id}/send`,
-      { mark_sent: false },
-    )
-    const links = (data.links ?? []) as SendLink[]
-    const missing = data.missing_phone?.length ?? 0
-    if (!links.length) {
-      sendMsg.value = `No phone numbers for update.${missing ? ` ${missing} missing phone.` : ''}`
-      return
-    }
-    // Same step-through panel as confirmations (WhatsApp only opens one chat at a time).
-    openBulkQueue(links, missing, 'update')
-    // Record that the update was prepared/broadcast started (not that every chat was sent).
-    await api.post(`/google-form-order-events/${event.value.id}/updates/${update.id}/send`, {
-      order_ids: links.map((l) => l.order_id),
-      mark_sent: true,
-    })
-    await load()
-  } catch (e: any) {
-    sendMsg.value = e?.response?.data?.message ?? 'Could not prepare update messages.'
   } finally {
     sending.value = false
   }
@@ -486,82 +275,10 @@ onMounted(load)
         </div>
         <div class="flex gap-2 items-start">
           <RouterLink :to="`/orders/${event.id}/edit`" class="px-4 py-2 rounded-lg border">Edit event</RouterLink>
-          <button
-            type="button"
-            class="bg-brand text-white px-4 py-2 rounded-lg disabled:opacity-60"
-            :disabled="sending || activeOrders.length === 0"
-            @click="sendConfirmationsAll"
-          >
-            Send confirmations to all
-          </button>
         </div>
       </div>
 
       <div v-if="sendMsg" class="mb-4 rounded-lg bg-stone-100 text-stone-800 px-4 py-3 text-sm">{{ sendMsg }}</div>
-
-      <div v-if="bulkPanel" ref="bulkPanelEl" class="mb-6 bg-white rounded-xl p-5 shadow-sm border border-brand/20">
-        <div class="flex flex-wrap items-start justify-between gap-3 mb-3">
-          <div>
-            <h2 class="font-semibold">{{ bulkHeading }}</h2>
-            <p class="text-sm text-muted mt-1">
-              Personal WhatsApp cannot send to everyone at once. Open → send → Next number. Or download the CSV / copy phones for WhatsApp Business broadcast or an SMS tool.
-            </p>
-          </div>
-          <button type="button" class="text-sm text-muted" @click="closeBulkPanel">Close</button>
-        </div>
-        <div class="flex flex-wrap gap-2 mb-4">
-          <button type="button" class="px-3 py-1.5 rounded-lg border text-sm" @click="downloadSendListCsv">Download send list (CSV)</button>
-          <button type="button" class="px-3 py-1.5 rounded-lg border text-sm" @click="copyAllPhones">Copy all phones</button>
-        </div>
-
-        <div v-if="bulkFinished" class="rounded-lg bg-emerald-50 text-emerald-800 px-4 py-3 text-sm mb-3">
-          Finished {{ bulkDoneIds.length }} opened / {{ bulkSkippedIds.length }} skipped / {{ bulkTotal }} total.
-          <button type="button" class="text-brand ml-2" @click="closeBulkPanel">Close</button>
-        </div>
-
-        <div v-else-if="bulkCurrent" class="rounded-lg border border-stone-200 p-4 mb-4">
-          <div class="text-xs text-muted uppercase tracking-wide mb-1">Recipient {{ bulkProgress }}</div>
-          <div class="text-lg font-semibold">{{ bulkCurrent.name || bulkCurrent.reference || 'Customer' }}</div>
-          <div class="text-sm text-stone-700 mt-1">{{ bulkCurrent.phone_display || bulkCurrent.phone }}</div>
-          <p class="text-xs text-muted mt-2 whitespace-pre-wrap line-clamp-3">{{ bulkCurrent.message }}</p>
-          <div class="flex flex-wrap gap-2 mt-4">
-            <button type="button" class="bg-brand text-white px-4 py-2 rounded-lg text-sm disabled:opacity-60" :disabled="sending" @click="openCurrentBulk('whatsapp')">
-              Open WhatsApp
-            </button>
-            <button type="button" class="bg-stone-800 text-white px-4 py-2 rounded-lg text-sm disabled:opacity-60" :disabled="sending" @click="openCurrentBulk('sms')">
-              Open SMS
-            </button>
-            <button type="button" class="px-4 py-2 rounded-lg border text-sm" :disabled="sending" @click="goNextBulk">
-              Next number →
-            </button>
-            <button type="button" class="px-4 py-2 text-sm text-muted" :disabled="sending" @click="skipCurrentBulk">
-              Skip
-            </button>
-            <button v-if="bulkIndex > 0" type="button" class="px-4 py-2 text-sm text-muted" :disabled="sending" @click="goPrevBulk">
-              ← Back
-            </button>
-          </div>
-        </div>
-
-        <p v-if="bulkMissing" class="text-xs text-amber-700 mb-3">{{ bulkMissing }} order(s) have no phone number.</p>
-        <ul class="max-h-48 overflow-auto divide-y border rounded-lg text-sm">
-          <li
-            v-for="(link, idx) in bulkLinks"
-            :key="link.order_id"
-            class="flex flex-wrap items-center justify-between gap-2 px-3 py-2"
-            :class="idx === bulkIndex && !bulkFinished ? 'bg-amber-50' : ''"
-          >
-            <div>
-              <span class="text-muted mr-2">{{ idx + 1 }}.</span>
-              <span class="font-medium">{{ link.name || link.reference }}</span>
-              <span class="text-muted ml-2">{{ link.phone_display || link.phone }}</span>
-            </div>
-            <span class="text-xs" :class="bulkDoneIds.includes(link.order_id) ? 'text-emerald-700' : bulkSkippedIds.includes(link.order_id) ? 'text-stone-400' : 'text-muted'">
-              {{ bulkDoneIds.includes(link.order_id) ? 'Opened' : bulkSkippedIds.includes(link.order_id) ? 'Skipped' : idx === bulkIndex ? 'Current' : 'Waiting' }}
-            </span>
-          </li>
-        </ul>
-      </div>
 
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
         <div class="bg-white rounded-xl p-5 shadow-sm lg:col-span-2">
@@ -593,28 +310,6 @@ onMounted(load)
           </template>
           <p v-else class="text-sm text-stone-700 whitespace-pre-wrap">{{ event.confirmation_template }}</p>
         </div>
-      </div>
-
-      <div class="bg-white rounded-xl p-5 shadow-sm mb-6">
-        <h2 class="font-semibold mb-3">Event update (delay, menu change, …)</h2>
-        <div class="grid grid-cols-1 md:grid-cols-4 gap-3 mb-3">
-          <input v-model="updateTitle" class="border rounded-lg px-3 py-2 md:col-span-1" placeholder="Title (optional)" />
-          <input v-model="updateMessage" class="border rounded-lg px-3 py-2 md:col-span-2" placeholder="Hi {name}, pickup delayed to 13:00…" />
-          <button type="button" class="bg-stone-800 text-white px-4 py-2 rounded-lg disabled:opacity-60" :disabled="savingUpdate || !updateMessage.trim()" @click="createUpdate">
-            Save update
-          </button>
-        </div>
-        <div v-if="(event.updates ?? []).length === 0" class="text-sm text-muted">No updates yet.</div>
-        <ul v-else class="space-y-2">
-          <li v-for="u in event.updates" :key="u.id" class="flex flex-wrap items-center justify-between gap-2 border rounded-lg px-3 py-2">
-            <div>
-              <div class="text-sm font-medium">{{ u.title || 'Update' }}</div>
-              <div class="text-sm text-stone-700">{{ u.message }}</div>
-              <div v-if="u.last_sent_at" class="text-xs text-muted">Last sent {{ formatDate(u.last_sent_at) }}</div>
-            </div>
-            <button type="button" class="text-brand text-sm" :disabled="sending || activeOrders.length === 0" @click="sendUpdate(u)">Send to all</button>
-          </li>
-        </ul>
       </div>
 
       <div class="bg-white rounded-xl shadow-sm overflow-hidden">
