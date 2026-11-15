@@ -103,29 +103,20 @@ async function saveTemplate() {
   }
 }
 
-async function patchOrder(order: OrderRow, changes: Record<string, unknown>) {
-  const { data } = await api.put(`/google-form-orders/${order.id}`, {
-    event_id: event.value?.id,
-    submitted_on: String(order.submitted_on).slice(0, 10),
-    service_type: (order as any).service_type || undefined,
-    items: order.items,
-    status: order.status,
-    customer_name: order.customer?.name || null,
-    customer_email: order.customer?.email || null,
-    customer_phone: orderPhone(order) || null,
-    whatsapp_phone: orderPhone(order) || null,
-    guest_count: order.guest_count ?? null,
-    location: order.location ?? null,
-    ...changes,
-  })
+async function applyOrderUpdate(orderId: number, data: OrderRow) {
   if (!event.value) return
-  event.value.orders = event.value.orders.map((o) => (o.id === order.id ? { ...o, ...data } : o))
+  event.value.orders = event.value.orders.map((o) => (o.id === orderId ? { ...o, ...data } : o))
 }
 
 async function toggleConfirmed(order: OrderRow, checked: boolean) {
   if (order.status === 'cancelled') return
   const status = checked ? 'confirmed' : 'new'
-  await patchOrder(order, { status })
+  try {
+    const { data } = await api.patch(`/google-form-orders/${order.id}/status`, { status })
+    await applyOrderUpdate(order.id, data)
+  } catch (e: any) {
+    sendMsg.value = e?.response?.data?.message ?? 'Could not update confirmed status.'
+  }
 }
 
 function formatDate(value?: string | null) {
@@ -189,16 +180,41 @@ function orderPhone(order: OrderRow) {
 }
 
 async function savePhone(order: OrderRow, phone: string) {
-  await patchOrder(order, {
-    customer_phone: phone || null,
-    whatsapp_phone: phone || null,
-  })
+  try {
+    const { data } = await api.put(`/google-form-orders/${order.id}`, {
+      event_id: event.value?.id,
+      submitted_on: String(order.submitted_on).slice(0, 10),
+      service_type: (order as any).service_type || undefined,
+      items: order.items,
+      status: order.status,
+      customer_name: order.customer?.name || null,
+      customer_email: order.customer?.email || null,
+      customer_phone: phone || null,
+      whatsapp_phone: phone || null,
+      guest_count: order.guest_count ?? null,
+      location: order.location ?? null,
+      form_response_id: (order as any).form_response_id || undefined,
+    })
+    await applyOrderUpdate(order.id, data)
+  } catch (e: any) {
+    sendMsg.value = e?.response?.data?.message ?? 'Could not save WhatsApp number.'
+  }
 }
 
-function tryOpenWhatsApp(url: string): Window | null {
-  const win = window.open(url, '_blank')
-  // Popup blockers return null — treat as not opened.
-  return win
+/** Open wa.me via anchor — works in desktop/Tauri where window.open often returns null. */
+function openWhatsAppUrl(url: string) {
+  const a = document.createElement('a')
+  a.href = url
+  a.target = '_blank'
+  a.rel = 'noopener noreferrer'
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  try {
+    window.open(url, '_blank')
+  } catch {
+    // ignore — anchor click is the primary path
+  }
 }
 
 async function markConfirmationsSent(orderIds: number[]) {
@@ -215,18 +231,23 @@ async function openWhatsApp(order: OrderRow) {
   try {
     const { data } = await api.get(`/google-form-orders/${order.id}/whatsapp`)
     const to = data.phone_display || data.phone
-    const win = tryOpenWhatsApp(data.url)
-    if (!win) {
-      sendMsg.value = `WhatsApp did not open for ${to}. Allow pop-ups, then try again. Not marked as sent.`
-      return
-    }
-    const mark = confirm(`WhatsApp opened for ${to}.\n\nClick OK only if the chat opened and you can send.\nClick Cancel to keep status as not sent.`)
+    openWhatsAppUrl(data.url)
+    const mark = confirm(`WhatsApp opened for ${to}.\n\nOK = mark as sent\nCancel = keep as not sent (you can Send again later)`)
     if (mark) {
       await markConfirmationsSent([order.id])
-      sendMsg.value = `Marked as sent TO ${to}.`
+      // Also tick Confirmed when message was sent
+      if (order.status === 'new') {
+        try {
+          const { data: updated } = await api.patch(`/google-form-orders/${order.id}/status`, { status: 'confirmed' })
+          await applyOrderUpdate(order.id, updated)
+        } catch {
+          // status tick is optional
+        }
+      }
+      sendMsg.value = `Sent to ${to}.`
       await load()
     } else {
-      sendMsg.value = `Not marked as sent for ${to}.`
+      sendMsg.value = `Opened for ${to} — not marked as sent. Use Send again anytime.`
     }
   } catch (e: any) {
     sendMsg.value = e?.response?.data?.message ?? 'Could not open WhatsApp.'
@@ -237,13 +258,12 @@ async function openWhatsApp(order: OrderRow) {
 
 function openLinksSequentially(links: { url: string; order_id?: number }[]) {
   const openedIds: number[] = []
-  let blocked = 0
   for (const link of links) {
-    const win = tryOpenWhatsApp(link.url)
-    if (win && link.order_id) openedIds.push(link.order_id)
-    else if (!win) blocked++
+    if (!link.url) continue
+    openWhatsAppUrl(link.url)
+    if (link.order_id) openedIds.push(link.order_id)
   }
-  return { openedIds, blocked }
+  return openedIds
 }
 
 async function sendConfirmationsAll() {
@@ -252,25 +272,24 @@ async function sendConfirmationsAll() {
   sending.value = true
   sendMsg.value = ''
   try {
-    // First get links without marking sent.
     const { data } = await api.post(`/google-form-order-events/${event.value.id}/send-confirmations`, {
       mark_sent: false,
     })
-    const { openedIds, blocked } = openLinksSequentially(data.links ?? [])
+    const openedIds = openLinksSequentially(data.links ?? [])
     const missing = data.missing_phone?.length ?? 0
     if (!openedIds.length) {
-      sendMsg.value = `No WhatsApp chats opened${blocked ? ' (pop-ups blocked)' : ''}. Not marked as sent.`
+      sendMsg.value = `No messages to open.${missing ? ` ${missing} without phone.` : ''}`
       return
     }
     const mark = confirm(
-      `${openedIds.length} WhatsApp chat(s) opened${blocked ? `, ${blocked} blocked` : ''}.\n\nClick OK only if they opened and you can send.\nClick Cancel to keep status as not sent.`,
+      `${openedIds.length} WhatsApp chat(s) opened.\n\nOK = mark as sent\nCancel = keep as not sent (Send again still works)`,
     )
     if (mark) {
       await markConfirmationsSent(openedIds)
       sendMsg.value = `Marked ${openedIds.length} as sent.${missing ? ` ${missing} without phone.` : ''}`
       await load()
     } else {
-      sendMsg.value = `Not marked as sent.${missing ? ` ${missing} without phone.` : ''}`
+      sendMsg.value = `Opened ${openedIds.length} — not marked as sent.${missing ? ` ${missing} without phone.` : ''}`
     }
   } catch (e: any) {
     sendMsg.value = e?.response?.data?.message ?? 'Could not prepare messages.'
@@ -305,14 +324,14 @@ async function sendUpdate(update: UpdateRow) {
       `/google-form-order-events/${event.value.id}/updates/${update.id}/send`,
       { mark_sent: false },
     )
-    const { openedIds, blocked } = openLinksSequentially(data.links ?? [])
+    const openedIds = openLinksSequentially(data.links ?? [])
     const missing = data.missing_phone?.length ?? 0
     if (!openedIds.length) {
-      sendMsg.value = `No update chats opened${blocked ? ' (pop-ups blocked)' : ''}. Not marked as sent.`
+      sendMsg.value = `No update chats to open.${missing ? ` ${missing} without phone.` : ''}`
       return
     }
     const mark = confirm(
-      `${openedIds.length} update chat(s) opened${blocked ? `, ${blocked} blocked` : ''}.\n\nClick OK only if they opened and you can send.`,
+      `${openedIds.length} update chat(s) opened.\n\nOK = mark as sent\nCancel = keep as not sent`,
     )
     if (mark) {
       await api.post(`/google-form-order-events/${event.value.id}/updates/${update.id}/send`, {
@@ -478,12 +497,14 @@ onMounted(load)
                 <button
                   v-if="o.status !== 'cancelled' && orderPhone(o)"
                   type="button"
-                  class="text-brand text-xs"
+                  class="text-brand text-xs disabled:opacity-50"
+                  :disabled="sending"
                   @click="openWhatsApp(o)"
                 >
                   {{ o.confirmation_sent_at ? 'Send again' : 'Send confirmation' }}
                 </button>
-                <span v-else class="text-xs text-muted">—</span>
+                <span v-else-if="o.status === 'cancelled'" class="text-xs text-muted">—</span>
+                <span v-else class="text-xs text-muted">Add phone</span>
               </td>
               <td class="p-3 whitespace-nowrap text-right">
                 <RouterLink :to="`/orders/entries/${o.id}/edit`" class="text-brand text-xs mr-3">Edit</RouterLink>

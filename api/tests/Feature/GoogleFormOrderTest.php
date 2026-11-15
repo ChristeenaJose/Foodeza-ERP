@@ -158,6 +158,40 @@ class GoogleFormOrderTest extends TestCase
             ->assertJsonPath('items', 'Sadya for 24');
     }
 
+    public function test_confirmed_checkbox_updates_status_without_clearing_phone(): void
+    {
+        $event = $this->makeEvent();
+        $customer = Customer::create(['name' => 'Test Customer', 'phone' => '015237221698']);
+        $order = GoogleFormOrder::create([
+            'event_id' => $event->id,
+            'reference' => 'GF-2026-0100',
+            'customer_id' => $customer->id,
+            'submitted_on' => '2026-11-10',
+            'event_date' => '2026-11-20',
+            'service_type' => 'Meal Box Delivery',
+            'items' => '1 box',
+            'status' => 'new',
+            'form_response_id' => 'resp-status',
+            'whatsapp_phone' => '015237221698',
+        ]);
+
+        $this->patchJson("/api/google-form-orders/{$order->id}/status", [
+            'status' => 'confirmed',
+        ])->assertOk()
+            ->assertJsonPath('status', 'confirmed')
+            ->assertJsonPath('whatsapp_phone', '015237221698');
+
+        $this->getJson("/api/google-form-orders/{$order->id}/whatsapp")
+            ->assertOk()
+            ->assertJsonPath('phone', '4915237221698');
+
+        $this->patchJson("/api/google-form-orders/{$order->id}/status", [
+            'status' => 'new',
+        ])->assertOk()
+            ->assertJsonPath('status', 'new')
+            ->assertJsonPath('whatsapp_phone', '015237221698');
+    }
+
     public function test_updated_whatsapp_phone_is_used_when_sending(): void
     {
         $event = $this->makeEvent();

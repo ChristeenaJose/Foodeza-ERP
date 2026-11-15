@@ -88,7 +88,7 @@ class GoogleFormOrderController extends Controller
             ]
         );
         $data['whatsapp_phone'] = $phone !== '' ? $phone : null;
-        $data = $this->prepare($data);
+        $data = $this->prepare($data, $googleFormOrder);
 
         $googleFormOrder->update($data);
 
@@ -98,6 +98,17 @@ class GoogleFormOrderController extends Controller
     public function cancel(GoogleFormOrder $googleFormOrder): JsonResponse
     {
         $googleFormOrder->update(['status' => 'cancelled']);
+
+        return response()->json($googleFormOrder->fresh(['customer', 'event']));
+    }
+
+    public function updateStatus(Request $request, GoogleFormOrder $googleFormOrder): JsonResponse
+    {
+        $data = $request->validate([
+            'status' => 'required|in:'.implode(',', array_keys(config('foodeza.google_form_order_statuses'))),
+        ]);
+
+        $googleFormOrder->update(['status' => $data['status']]);
 
         return response()->json($googleFormOrder->fresh(['customer', 'event']));
     }
@@ -164,20 +175,24 @@ class GoogleFormOrderController extends Controller
         ]);
     }
 
-    private function prepare(array $data): array
+    private function prepare(array $data, ?GoogleFormOrder $existing = null): array
     {
-        $responseId = trim((string) ($data['form_response_id'] ?? ''));
-        if ($responseId === '') {
-            $responseId = hash('sha256', implode('|', [
-                $data['event_id'] ?? '',
-                $data['customer_name'] ?? '',
-                $data['customer_phone'] ?? '',
-                $data['submitted_on'] ?? '',
-                $data['items'] ?? '',
-                microtime(true),
-            ]));
+        if (array_key_exists('form_response_id', $data) || ! $existing) {
+            $responseId = trim((string) ($data['form_response_id'] ?? ''));
+            if ($responseId === '') {
+                $responseId = hash('sha256', implode('|', [
+                    $data['event_id'] ?? $existing?->event_id ?? '',
+                    $data['customer_name'] ?? '',
+                    $data['customer_phone'] ?? '',
+                    $data['submitted_on'] ?? '',
+                    $data['items'] ?? '',
+                    microtime(true),
+                ]));
+            }
+            $data['form_response_id'] = $responseId;
+        } else {
+            unset($data['form_response_id']);
         }
-        $data['form_response_id'] = $responseId;
         unset($data['customer_name'], $data['customer_email'], $data['customer_phone']);
         if (array_key_exists('whatsapp_phone', $data)) {
             $phone = trim((string) ($data['whatsapp_phone'] ?? ''));
