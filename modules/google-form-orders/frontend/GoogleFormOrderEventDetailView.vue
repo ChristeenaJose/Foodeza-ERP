@@ -242,23 +242,18 @@ async function openWhatsApp(order: OrderRow) {
     const { data } = await api.get(`/google-form-orders/${order.id}/whatsapp`)
     const to = data.phone_display || data.phone
     openWhatsAppUrl(data.url)
-    const mark = confirm(`WhatsApp opened for ${to}.\n\nOK = mark as sent\nCancel = keep as not sent (you can Send again later)`)
-    if (mark) {
-      await markConfirmationsSent([order.id])
-      // Also tick Confirmed when message was sent
-      if (order.status === 'new') {
-        try {
-          const { data: updated } = await api.patch(`/google-form-orders/${order.id}/status`, { status: 'confirmed' })
-          await applyOrderUpdate(order.id, updated)
-        } catch {
-          // status tick is optional
-        }
+    // Mark as sent → button becomes "Send again", WA sent checkbox checked.
+    // If it did not actually send, uncheck on Edit order (or WA sent column).
+    await markConfirmationsSent([order.id])
+    if (order.status === 'new') {
+      try {
+        await api.patch(`/google-form-orders/${order.id}/status`, { status: 'confirmed' })
+      } catch {
+        // status tick is optional
       }
-      sendMsg.value = `Sent to ${to}.`
-      await load()
-    } else {
-      sendMsg.value = `Opened for ${to} — not marked as sent. Use Send again anytime.`
     }
+    sendMsg.value = `Opened for ${to} and marked as sent. If not sent, Edit order → uncheck “WhatsApp confirmation sent”.`
+    await load()
   } catch (e: any) {
     sendMsg.value = e?.response?.data?.message ?? 'Could not open WhatsApp.'
   } finally {
@@ -291,16 +286,9 @@ async function sendConfirmationsAll() {
       sendMsg.value = `No messages to open.${missing ? ` ${missing} without phone.` : ''}`
       return
     }
-    const mark = confirm(
-      `${openedIds.length} WhatsApp chat(s) opened.\n\nOK = mark as sent\nCancel = keep as not sent (Send again still works)`,
-    )
-    if (mark) {
-      await markConfirmationsSent(openedIds)
-      sendMsg.value = `Marked ${openedIds.length} as sent.${missing ? ` ${missing} without phone.` : ''}`
-      await load()
-    } else {
-      sendMsg.value = `Opened ${openedIds.length} — not marked as sent.${missing ? ` ${missing} without phone.` : ''}`
-    }
+    await markConfirmationsSent(openedIds)
+    sendMsg.value = `Opened ${openedIds.length} and marked as sent.${missing ? ` ${missing} without phone.` : ''} If one failed, Edit that order → uncheck “WhatsApp confirmation sent”.`
+    await load()
   } catch (e: any) {
     sendMsg.value = e?.response?.data?.message ?? 'Could not prepare messages.'
   } finally {
@@ -340,19 +328,12 @@ async function sendUpdate(update: UpdateRow) {
       sendMsg.value = `No update chats to open.${missing ? ` ${missing} without phone.` : ''}`
       return
     }
-    const mark = confirm(
-      `${openedIds.length} update chat(s) opened.\n\nOK = mark as sent\nCancel = keep as not sent`,
-    )
-    if (mark) {
-      await api.post(`/google-form-order-events/${event.value.id}/updates/${update.id}/send`, {
-        order_ids: openedIds,
-        mark_sent: true,
-      })
-      sendMsg.value = `Update marked sent to ${openedIds.length}.${missing ? ` ${missing} without phone.` : ''}`
-      await load()
-    } else {
-      sendMsg.value = `Update not marked as sent.${missing ? ` ${missing} without phone.` : ''}`
-    }
+    await api.post(`/google-form-order-events/${event.value.id}/updates/${update.id}/send`, {
+      order_ids: openedIds,
+      mark_sent: true,
+    })
+    sendMsg.value = `Update opened for ${openedIds.length}.${missing ? ` ${missing} without phone.` : ''}`
+    await load()
   } catch (e: any) {
     sendMsg.value = e?.response?.data?.message ?? 'Could not send update.'
   } finally {

@@ -109,11 +109,13 @@ async function submit() {
           </select>
         </label>
       </div>
-      <label class="flex items-center gap-2 rounded-lg border px-3 py-3 cursor-pointer">
-        <input v-model="form.confirmation_sent" type="checkbox" class="h-4 w-4 accent-brand" />
+      <label class="flex items-start gap-3 rounded-lg border border-stone-200 bg-stone-50 px-3 py-3 cursor-pointer">
+        <input v-model="form.confirmation_sent" type="checkbox" class="h-4 w-4 mt-0.5 accent-brand" />
         <span>
-          <span class="text-sm font-medium block">WhatsApp confirmation sent</span>
-          <span class="text-xs text-muted">Check if message was sent; uncheck to mark as not sent (Send again).</span>
+          <span class="text-sm font-medium block">WhatsApp message sent</span>
+          <span class="text-xs text-muted block mt-0.5">
+            Checked after Send confirmation (shows as Send again). If the message was not sent, uncheck here and save — then you can send again from the event list.
+          </span>
         </span>
       </label>
       <label class="block"><span class="text-sm font-medium">Customer</span><input v-model="form.customer_name" class="mt-1 w-full border rounded-lg px-3 py-2" /></label>
