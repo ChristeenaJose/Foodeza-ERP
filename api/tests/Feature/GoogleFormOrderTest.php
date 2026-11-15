@@ -267,6 +267,53 @@ class GoogleFormOrderTest extends TestCase
             ->assertJsonPath('phone_display', '015237221698');
     }
 
+    public function test_delivery_list_pdf_and_csv_include_amounts_and_item_totals(): void
+    {
+        $event = $this->makeEvent([
+            'name' => 'Foodtruck - Kehl',
+            'location' => 'Kehl',
+            'event_date' => '2026-11-15',
+            'start_time' => '15:00',
+            'end_time' => '19:00',
+        ]);
+
+        $csv = file_get_contents(base_path('tests/Fixtures/foodtruck-kehl.csv'));
+        $this->assertNotFalse($csv);
+
+        $file = UploadedFile::fake()->createWithContent('foodtruck-kehl.csv', $csv);
+        $this->post('/api/google-form-order-events/'.$event->id.'/import', [
+            'file' => $file,
+        ], ['Accept' => 'application/json'])
+            ->assertOk()
+            ->assertJsonPath('created', 28);
+
+        $list = app(\App\Services\GoogleFormOrderDeliveryListService::class)->build($event->fresh());
+        $this->assertSame(28, $list['order_count']);
+        $this->assertNotEmpty($list['columns']);
+        $this->assertEqualsWithDelta(18.0, $list['rows'][0]['amount'], 0.01);
+        $this->assertEqualsWithDelta(12.5, $list['rows'][1]['amount'], 0.01);
+        // Bottom totals from sample PDF: Combo 9, Cutlet 13, Pazhampori 16, Chicken65 3, Palappam 17, Kappa 25, Lassi 5, Tea 5
+        $labels = array_map(fn ($c) => $c['label'], $list['columns']);
+        $totalsByLabel = array_combine($labels, $list['column_totals']);
+        $this->assertSame(9, $totalsByLabel['Chicken Cutlet, Pazhampori & Tea Combo (€5.50)'] ?? null);
+        $this->assertSame(13, $totalsByLabel['Chicken Cutlet (€2.00)'] ?? null);
+        $this->assertSame(16, $totalsByLabel['Pazhampori (€2.00)'] ?? null);
+        $this->assertSame(3, $totalsByLabel['Chicken 65 (€6.50)'] ?? null);
+        $this->assertSame(17, $totalsByLabel['Palappam Combo with Chicken 65 (€12.50)'] ?? null);
+        $this->assertSame(25, $totalsByLabel['Kappa Biriyani(€12.50)'] ?? null);
+        $this->assertSame(5, $totalsByLabel['Mango Lassi (€3.50)'] ?? null);
+        $this->assertSame(5, $totalsByLabel['Indian Tea (€2.00)'] ?? null);
+
+        $this->get("/api/google-form-order-events/{$event->id}/delivery-list?format=pdf")
+            ->assertOk()
+            ->assertHeader('content-type', 'application/pdf');
+
+        $csvResponse = $this->get("/api/google-form-order-events/{$event->id}/delivery-list?format=csv");
+        $csvResponse->assertOk();
+        $this->assertStringContainsString('Full Name', $csvResponse->streamedContent());
+        $this->assertStringContainsString('Jubin Sebastian E', $csvResponse->streamedContent());
+    }
+
     public function test_confirmation_and_update_messages_are_prepared(): void
     {
         $event = $this->makeEvent();

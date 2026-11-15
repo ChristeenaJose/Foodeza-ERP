@@ -41,6 +41,7 @@ const sendMsg = ref('')
 const editingTemplate = ref(false)
 const templateDraft = ref('')
 const savingTemplate = ref(false)
+const downloadingList = ref(false)
 
 const statusClass: Record<string, string> = {
   new: 'bg-amber-100 text-amber-800',
@@ -253,6 +254,34 @@ async function openWhatsApp(order: OrderRow) {
   }
 }
 
+async function downloadDeliveryList(format: 'pdf' | 'csv' = 'pdf') {
+  if (!event.value) return
+  downloadingList.value = true
+  sendMsg.value = ''
+  try {
+    const { data } = await api.get(`/google-form-order-events/${event.value.id}/delivery-list`, {
+      params: { format },
+      responseType: 'blob',
+    })
+    const mime = format === 'csv' ? 'text/csv' : 'application/pdf'
+    const blob = new Blob([data], { type: mime })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    const safeName = (event.value.name || 'delivery-list').replace(/[^\w.-]+/g, '-')
+    a.href = url
+    a.download = `${safeName}-delivery-list.${format}`
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
+    sendMsg.value = `Downloaded delivery list (${format.toUpperCase()}).`
+  } catch (e: any) {
+    sendMsg.value = e?.response?.data?.message ?? 'Could not download delivery list.'
+  } finally {
+    downloadingList.value = false
+  }
+}
+
 onMounted(load)
 </script>
 
@@ -273,8 +302,24 @@ onMounted(load)
             {{ formatDate(event.event_date) }} · {{ formatTime(event.start_time) }}–{{ formatTime(event.end_time) }} · {{ event.location }}
           </p>
         </div>
-        <div class="flex gap-2 items-start">
+        <div class="flex gap-2 items-start flex-wrap">
           <RouterLink :to="`/orders/${event.id}/edit`" class="px-4 py-2 rounded-lg border">Edit event</RouterLink>
+          <button
+            type="button"
+            class="bg-brand text-white px-4 py-2 rounded-lg disabled:opacity-60"
+            :disabled="downloadingList || !(event.orders?.length)"
+            @click="downloadDeliveryList('pdf')"
+          >
+            {{ downloadingList ? 'Preparing…' : 'Get list for delivery' }}
+          </button>
+          <button
+            type="button"
+            class="px-4 py-2 rounded-lg border text-sm disabled:opacity-60"
+            :disabled="downloadingList || !(event.orders?.length)"
+            @click="downloadDeliveryList('csv')"
+          >
+            CSV
+          </button>
         </div>
       </div>
 

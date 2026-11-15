@@ -10,6 +10,7 @@ Route::apiResource('google-form-order-events', GoogleFormOrderEventController::c
     ->parameters(['google-form-order-events' => 'googleFormOrderEvent']);
 
 Route::post('/google-form-order-events/{googleFormOrderEvent}/import', [GoogleFormOrderEventController::class, 'import']);
+Route::get('/google-form-order-events/{googleFormOrderEvent}/delivery-list', [GoogleFormOrderEventController::class, 'deliveryList']);
 Route::post('/google-form-order-events/{googleFormOrderEvent}/updates', [GoogleFormOrderEventController::class, 'storeUpdate']);
 Route::post('/google-form-order-events/{googleFormOrderEvent}/send-confirmations', [GoogleFormOrderEventController::class, 'sendConfirmations']);
 Route::post('/google-form-order-events/{googleFormOrderEvent}/updates/{update}/send', [GoogleFormOrderEventController::class, 'sendUpdate']);

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\GoogleFormOrderEvent;
 use App\Models\GoogleFormOrderUpdate;
+use App\Services\GoogleFormOrderDeliveryListService;
 use App\Services\GoogleFormOrderImportService;
 use App\Services\WhatsAppMessageService;
 use App\Support\EnsureGoogleFormOrderTables;
@@ -12,12 +13,14 @@ use App\Support\RecordDates;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
+use Symfony\Component\HttpFoundation\Response;
 
 class GoogleFormOrderEventController extends Controller
 {
     public function __construct(
         private GoogleFormOrderImportService $importer,
         private WhatsAppMessageService $whatsapp,
+        private GoogleFormOrderDeliveryListService $deliveryLists,
     ) {}
 
     public function index(): JsonResponse
@@ -100,6 +103,17 @@ class GoogleFormOrderEventController extends Controller
                 'orders' => fn ($q) => $q->with('customer')->orderByDesc('submitted_on')->orderByDesc('id'),
             ]),
         ]);
+    }
+
+    public function deliveryList(Request $request, GoogleFormOrderEvent $googleFormOrderEvent): Response
+    {
+        $format = strtolower((string) $request->query('format', 'pdf'));
+
+        if ($format === 'csv') {
+            return $this->deliveryLists->csv($googleFormOrderEvent);
+        }
+
+        return $this->deliveryLists->pdf($googleFormOrderEvent);
     }
 
     public function storeUpdate(Request $request, GoogleFormOrderEvent $googleFormOrderEvent): JsonResponse
