@@ -50,6 +50,9 @@ const updateMessage = ref('')
 const savingUpdate = ref(false)
 const sending = ref(false)
 const sendMsg = ref('')
+const editingTemplate = ref(false)
+const templateDraft = ref('')
+const savingTemplate = ref(false)
 
 const statusClass: Record<string, string> = {
   new: 'bg-amber-100 text-amber-800',
@@ -62,6 +65,68 @@ const activeOrders = computed(() => (event.value?.orders ?? []).filter((o) => o.
 const importMsgClass = computed(() =>
   /fail|error/i.test(importMsg.value) ? 'text-red-700' : 'text-emerald-700',
 )
+
+function isConfirmed(order: OrderRow) {
+  return order.status === 'confirmed' || order.status === 'completed'
+}
+
+function startEditTemplate() {
+  if (!event.value) return
+  templateDraft.value = event.value.confirmation_template || ''
+  editingTemplate.value = true
+}
+
+function cancelEditTemplate() {
+  editingTemplate.value = false
+  templateDraft.value = ''
+}
+
+async function saveTemplate() {
+  if (!event.value) return
+  savingTemplate.value = true
+  try {
+    const { data } = await api.put(`/google-form-order-events/${event.value.id}`, {
+      name: event.value.name,
+      location: event.value.location,
+      event_date: String(event.value.event_date).slice(0, 10),
+      start_time: String(event.value.start_time).slice(0, 5),
+      end_time: String(event.value.end_time).slice(0, 5),
+      confirmation_template: templateDraft.value,
+      notes: event.value.notes ?? null,
+    })
+    event.value = { ...event.value, ...data, orders: event.value.orders, updates: event.value.updates }
+    editingTemplate.value = false
+  } catch (e: any) {
+    sendMsg.value = e?.response?.data?.message ?? 'Could not save template.'
+  } finally {
+    savingTemplate.value = false
+  }
+}
+
+async function patchOrder(order: OrderRow, changes: Record<string, unknown>) {
+  const { data } = await api.put(`/google-form-orders/${order.id}`, {
+    event_id: event.value?.id,
+    submitted_on: String(order.submitted_on).slice(0, 10),
+    service_type: (order as any).service_type || undefined,
+    items: order.items,
+    status: order.status,
+    customer_name: order.customer?.name || null,
+    customer_email: order.customer?.email || null,
+    customer_phone: orderPhone(order) || null,
+    whatsapp_phone: orderPhone(order) || null,
+    guest_count: order.guest_count ?? null,
+    location: order.location ?? null,
+    ...changes,
+  })
+  if (!event.value) return
+  event.value.orders = event.value.orders.map((o) => (o.id === order.id ? { ...o, ...data } : o))
+}
+
+async function toggleConfirmed(order: OrderRow, checked: boolean) {
+  if (order.status === 'cancelled') return
+  const status = checked ? 'confirmed' : 'new'
+  await patchOrder(order, { status })
+}
 
 function formatDate(value?: string | null) {
   if (!value) return '—'
@@ -124,21 +189,10 @@ function orderPhone(order: OrderRow) {
 }
 
 async function savePhone(order: OrderRow, phone: string) {
-  const { data } = await api.put(`/google-form-orders/${order.id}`, {
-    event_id: event.value?.id,
-    submitted_on: String(order.submitted_on).slice(0, 10),
-    service_type: (order as any).service_type || undefined,
-    items: order.items,
-    status: order.status,
-    customer_name: order.customer?.name || null,
-    customer_email: order.customer?.email || null,
+  await patchOrder(order, {
     customer_phone: phone || null,
     whatsapp_phone: phone || null,
-    guest_count: order.guest_count ?? null,
-    location: order.location ?? null,
   })
-  if (!event.value) return
-  event.value.orders = event.value.orders.map((o) => (o.id === order.id ? { ...o, ...data } : o))
 }
 
 function tryOpenWhatsApp(url: string): Window | null {
@@ -320,8 +374,27 @@ onMounted(load)
           <p v-if="importMsg" class="text-sm mt-3" :class="importMsgClass">{{ importMsg }}</p>
         </div>
         <div class="bg-white rounded-xl p-5 shadow-sm">
-          <h2 class="font-semibold mb-2">Confirmation template</h2>
-          <p class="text-sm text-stone-700 whitespace-pre-wrap">{{ event.confirmation_template }}</p>
+          <div class="flex items-center justify-between gap-2 mb-2">
+            <h2 class="font-semibold">Confirmation template</h2>
+            <button
+              v-if="!editingTemplate"
+              type="button"
+              class="text-brand text-xs"
+              @click="startEditTemplate"
+            >
+              Edit
+            </button>
+          </div>
+          <template v-if="editingTemplate">
+            <textarea v-model="templateDraft" rows="5" class="w-full border rounded-lg px-3 py-2 text-sm font-mono" />
+            <div class="flex gap-2 justify-end mt-2">
+              <button type="button" class="px-3 py-1 text-sm" :disabled="savingTemplate" @click="cancelEditTemplate">Cancel</button>
+              <button type="button" class="bg-brand text-white px-3 py-1 rounded-lg text-sm disabled:opacity-60" :disabled="savingTemplate || !templateDraft.trim()" @click="saveTemplate">
+                {{ savingTemplate ? 'Saving…' : 'Save template' }}
+              </button>
+            </div>
+          </template>
+          <p v-else class="text-sm text-stone-700 whitespace-pre-wrap">{{ event.confirmation_template }}</p>
         </div>
       </div>
 
@@ -354,6 +427,7 @@ onMounted(load)
         <table class="w-full text-sm">
           <thead class="bg-stone-50 text-muted uppercase text-xs">
             <tr>
+              <th class="text-center p-3">Confirmed</th>
               <th class="text-left p-3">Ref</th>
               <th class="text-left p-3">Customer</th>
               <th class="text-left p-3">Order</th>
@@ -364,9 +438,19 @@ onMounted(load)
           </thead>
           <tbody>
             <tr v-if="!event.orders?.length">
-              <td colspan="6" class="p-6 text-center text-muted">No orders yet. Upload a Google Form export.</td>
+              <td colspan="7" class="p-6 text-center text-muted">No orders yet. Upload a Google Form export.</td>
             </tr>
             <tr v-for="o in event.orders" :key="o.id" class="border-t" :class="o.status === 'cancelled' ? 'opacity-60' : ''">
+              <td class="p-3 text-center">
+                <input
+                  type="checkbox"
+                  class="h-4 w-4 accent-brand"
+                  :checked="isConfirmed(o)"
+                  :disabled="o.status === 'cancelled'"
+                  :title="isConfirmed(o) ? 'Confirmed' : 'Mark confirmed'"
+                  @change="toggleConfirmed(o, ($event.target as HTMLInputElement).checked)"
+                />
+              </td>
               <td class="p-3 whitespace-nowrap">
                 {{ o.reference }}
                 <div class="text-xs text-muted">{{ formatDate(o.submitted_on) }}</div>
