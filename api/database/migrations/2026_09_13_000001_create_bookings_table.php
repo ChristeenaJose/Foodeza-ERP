@@ -1,0 +1,34 @@
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::create('bookings', function (Blueprint $table) {
+            $table->id();
+            $table->string('reference')->unique();
+            $table->foreignId('customer_id')->nullable()->constrained()->nullOnDelete();
+            $table->string('title');
+            $table->string('service_type');
+            $table->date('event_date');
+            $table->time('start_time')->nullable();
+            $table->time('end_time')->nullable();
+            $table->string('location')->nullable();
+            $table->unsignedInteger('guest_count')->nullable();
+            $table->enum('status', ['inquiry', 'confirmed', 'completed', 'cancelled'])->default('inquiry');
+            $table->decimal('quoted_amount', 12, 2)->nullable();
+            $table->decimal('deposit_amount', 12, 2)->nullable();
+            $table->text('notes')->nullable();
+            $table->timestamps();
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::dropIfExists('bookings');
+    }
+};

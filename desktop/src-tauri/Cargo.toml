@@ -1,0 +1,19 @@
+[package]
+name = "foodeza-bookkeeping"
+version = "0.1.0"
+description = "Foodeza ERP"
+authors = ["Foodeza"]
+edition = "2021"
+
+[lib]
+name = "foodeza_bookkeeping_lib"
+crate-type = ["lib", "cdylib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-shell = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

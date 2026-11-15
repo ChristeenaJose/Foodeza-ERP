@@ -1,0 +1,16 @@
+{
+    "name": "foodeza/bookkeeping",
+    "description": "Bookkeeping application for Foodeza",
+    "type": "project",
+    "require": {
+        "php": ">=8.2"
+    },
+    "autoload": {
+        "psr-4": {
+            "Foodeza\\Bookkeeping\\": "src/"
+        }
+    },
+    "scripts": {
+        "serve": "php -S localhost:8080 -t public public/router.php"
+    }
+}

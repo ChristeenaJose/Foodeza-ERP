@@ -1,0 +1,43 @@
+# Dependencies and build output
+/api/vendor/
+/api/node_modules/
+/desktop/node_modules/
+/desktop/dist/
+/desktop/src-tauri/target/
+/node_modules/
+/vendor/
+
+# Secrets and local environment
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+**/.env.backup
+**/.env.production
+**/auth.json
+*.pem
+*.key
+/api/storage/*.key
+
+# Local databases and dumps. Schema and migration SQL stay in the repo.
+*.sqlite
+*.sqlite3
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+*.db
+*.dump
+
+# Uploaded user files
+/storage/receipts/**
+/storage/invoices/**
+/storage/uploads/**
+!/storage/**/.gitignore
+
+# Tooling noise
+.DS_Store
+.phpunit.result.cache
+.phpunit.cache
+*.log

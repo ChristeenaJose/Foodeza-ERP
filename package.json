@@ -1,0 +1,18 @@
+{
+  "name": "foodeza-erp",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "dev:api": "mkdir -p \"$HOME/Library/Application Support/com.foodeza.bookkeeping\" && cd api && FOODEZA_DATA_DIR=\"$HOME/Library/Application Support/com.foodeza.bookkeeping\" php artisan serve --host=127.0.0.1 --port=17654",
+    "dev:web": "cd desktop && npm run dev",
+    "dev:desktop": "cd desktop && npm run tauri:dev",
+    "dev": "concurrently -k -n api,web -c red,blue \"npm run dev:api\" \"npm run dev:web\"",
+    "desktop": "concurrently -k -n api,desktop -c red,green \"npm run dev:api\" \"npm run dev:desktop\"",
+    "build:web": "cd desktop && npm run build",
+    "build:desktop": "cd desktop && npm run tauri:build",
+    "setup": "cd api && composer install && php artisan migrate --force && php artisan db:seed --force && cd ../desktop && npm install"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}

@@ -1,0 +1,15 @@
+@import "tailwindcss";
+
+@theme {
+  --color-brand: #dc2626;
+  --color-brand-dark: #b91c1c;
+  --color-sidebar: #1a1a2e;
+  --color-surface: #ffffff;
+  --color-muted: #6b7280;
+  --color-income: #059669;
+  --color-expense: #dc2626;
+}
+
+body {
+  @apply bg-stone-100 text-slate-900 antialiased;
+}
