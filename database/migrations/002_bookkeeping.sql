@@ -1,3 +1,6 @@
+-- SQLite upgrade for an existing bookkeeping database. Not a fresh setup.
+-- A new older bookkeeping file uses database/schema.sql. The ERP app uses: cd api && php artisan migrate
+
 -- Migration 2: upgrade legacy schema to full bookkeeping
 
 CREATE TABLE IF NOT EXISTS schema_migrations (

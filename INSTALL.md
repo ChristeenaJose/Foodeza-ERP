@@ -160,9 +160,11 @@ npm run setup        # composer install, migrate DB, npm install desktop
 This will:
 
 - Install Laravel PHP packages
-- Create/migrate the SQLite database
+- Create the SQLite database
 - Seed Foodeza categories and services
 - Install Vue + Tauri frontend packages
+
+The engine is SQLite. `npm run setup` migrates, then seeds categories. For an empty database with no rows, run `cd api && php artisan migrate`. That creates `api/database/database.sqlite`. `database/schema.sql` is the older bookkeeping schema only. `database/migrations/002_bookkeeping.sql` upgrades that older database and is not a fresh setup.
 
 ### 4. Verify installation
 

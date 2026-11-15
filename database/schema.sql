@@ -1,3 +1,8 @@
+-- SQLite, structure only. No rows and no credentials.
+-- Fresh older bookkeeping database: sqlite3 database/bookkeeping.sqlite < database/schema.sql
+-- database/migrations/002_bookkeeping.sql only upgrades that database. It does not create categories, so it is not a fresh setup.
+-- The ERP app does not load this file. From api/, php artisan migrate creates the empty SQLite file api/database/database.sqlite.
+
 -- Foodeza Bookkeeping — Full Schema
 
 CREATE TABLE IF NOT EXISTS schema_migrations (
