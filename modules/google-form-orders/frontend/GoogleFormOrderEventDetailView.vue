@@ -68,10 +68,15 @@ type SendLink = {
 const bulkPanel = ref(false)
 const bulkLinks = ref<SendLink[]>([])
 const bulkMissing = ref(0)
+/** 0-based index of the current recipient in the step-through queue */
 const bulkIndex = ref(0)
-const bulkChannel = ref<'whatsapp' | 'sms'>('whatsapp')
-const bulkRunning = ref(false)
-const bulkStop = ref(false)
+const bulkDoneIds = ref<number[]>([])
+const bulkSkippedIds = ref<number[]>([])
+
+const bulkCurrent = computed(() => bulkLinks.value[bulkIndex.value] ?? null)
+const bulkTotal = computed(() => bulkLinks.value.length)
+const bulkProgress = computed(() => `${Math.min(bulkIndex.value + 1, bulkTotal.value)} / ${bulkTotal.value}`)
+const bulkFinished = computed(() => bulkIndex.value >= bulkLinks.value.length)
 
 const statusClass: Record<string, string> = {
   new: 'bg-amber-100 text-amber-800',
@@ -290,10 +295,6 @@ async function openWhatsApp(order: OrderRow) {
   }
 }
 
-async function openOneBulkLink(link: SendLink, channel: 'whatsapp' | 'sms') {
-  await openExternalUrl(linkForChannel(link, channel))
-}
-
 async function sendConfirmationsAll() {
   if (!event.value) return
   sending.value = true
@@ -305,14 +306,14 @@ async function sendConfirmationsAll() {
     bulkLinks.value = data.links ?? []
     bulkMissing.value = data.missing_phone?.length ?? 0
     bulkIndex.value = 0
-    bulkChannel.value = 'whatsapp'
-    bulkStop.value = false
+    bulkDoneIds.value = []
+    bulkSkippedIds.value = []
     if (!bulkLinks.value.length) {
       sendMsg.value = `No phone numbers to message.${bulkMissing.value ? ` ${bulkMissing.value} missing phone.` : ''}`
       return
     }
     bulkPanel.value = true
-    sendMsg.value = `${bulkLinks.value.length} recipient(s) ready. Open all via WhatsApp (or SMS if WhatsApp is not available).`
+    sendMsg.value = `${bulkLinks.value.length} numbers ready. Open one chat, send, then click Next — WhatsApp only keeps one chat open at a time.`
   } catch (e: any) {
     sendMsg.value = e?.response?.data?.message ?? 'Could not prepare messages.'
   } finally {
@@ -321,47 +322,51 @@ async function sendConfirmationsAll() {
 }
 
 function closeBulkPanel() {
-  bulkStop.value = true
-  bulkRunning.value = false
   bulkPanel.value = false
 }
 
-async function runBulkOpen(channel: 'whatsapp' | 'sms') {
-  if (!bulkLinks.value.length || bulkRunning.value) return
-  bulkChannel.value = channel
-  bulkRunning.value = true
-  bulkStop.value = false
-  const openedIds: number[] = []
-  const delayMs = 1200
-  for (let i = 0; i < bulkLinks.value.length; i++) {
-    if (bulkStop.value) break
-    bulkIndex.value = i + 1
-    const link = bulkLinks.value[i]
-    try {
-      await openOneBulkLink(link, channel)
-      openedIds.push(link.order_id)
-    } catch {
-      // continue with next number
+async function openCurrentBulk(channel: 'whatsapp' | 'sms') {
+  const link = bulkCurrent.value
+  if (!link) return
+  sending.value = true
+  try {
+    await openExternalUrl(linkForChannel(link, channel))
+    await markConfirmationsSent([link.order_id])
+    if (!bulkDoneIds.value.includes(link.order_id)) {
+      bulkDoneIds.value = [...bulkDoneIds.value, link.order_id]
     }
-    if (i < bulkLinks.value.length - 1 && !bulkStop.value) {
-      await new Promise((r) => setTimeout(r, delayMs))
-    }
-  }
-  if (openedIds.length) {
-    await markConfirmationsSent(openedIds)
+    sendMsg.value = `Opened ${channel === 'sms' ? 'SMS' : 'WhatsApp'} for ${link.name || link.phone_display || link.phone}. Send the message, then click Next number.`
     await load()
+  } catch (e: any) {
+    sendMsg.value = e?.response?.data?.message ?? 'Could not open chat.'
+  } finally {
+    sending.value = false
   }
-  bulkRunning.value = false
-  const label = channel === 'sms' ? 'SMS/Messages' : 'WhatsApp'
-  sendMsg.value = `Opened ${openedIds.length}/${bulkLinks.value.length} via ${label}.${bulkMissing.value ? ` ${bulkMissing.value} without phone.` : ''} Tap Send in each chat. If one failed, Edit → uncheck WA sent.`
 }
 
-async function openBulkAt(index: number, channel: 'whatsapp' | 'sms') {
-  const link = bulkLinks.value[index]
+function skipCurrentBulk() {
+  const link = bulkCurrent.value
   if (!link) return
-  await openOneBulkLink(link, channel)
-  await markConfirmationsSent([link.order_id])
-  await load()
+  if (!bulkSkippedIds.value.includes(link.order_id)) {
+    bulkSkippedIds.value = [...bulkSkippedIds.value, link.order_id]
+  }
+  goNextBulk()
+}
+
+function goNextBulk() {
+  if (bulkIndex.value < bulkLinks.value.length) {
+    bulkIndex.value += 1
+  }
+  if (bulkFinished.value) {
+    sendMsg.value = `Done: ${bulkDoneIds.value.length} opened, ${bulkSkippedIds.value.length} skipped, of ${bulkTotal.value}.`
+  } else {
+    const next = bulkCurrent.value
+    sendMsg.value = `Next (${bulkProgress.value}): ${next?.name || next?.phone_display || next?.phone || ''}`
+  }
+}
+
+function goPrevBulk() {
+  if (bulkIndex.value > 0) bulkIndex.value -= 1
 }
 
 async function createUpdate() {
@@ -392,15 +397,14 @@ async function sendUpdate(update: UpdateRow) {
     bulkLinks.value = (data.links ?? []).map((l: SendLink) => l)
     bulkMissing.value = data.missing_phone?.length ?? 0
     bulkIndex.value = 0
-    bulkChannel.value = 'whatsapp'
-    bulkStop.value = false
+    bulkDoneIds.value = []
+    bulkSkippedIds.value = []
     if (!bulkLinks.value.length) {
       sendMsg.value = `No phone numbers for update.${bulkMissing.value ? ` ${bulkMissing.value} missing phone.` : ''}`
       return
     }
     bulkPanel.value = true
-    sendMsg.value = `Update ready for ${bulkLinks.value.length} recipient(s). Open all via WhatsApp or SMS.`
-    // Mark update last_sent when user finishes opening from panel — also mark now for tracking.
+    sendMsg.value = `Update for ${bulkLinks.value.length} numbers. Open one, send, then Next.`
     await api.post(`/google-form-order-events/${event.value.id}/updates/${update.id}/send`, {
       order_ids: bulkLinks.value.map((l) => l.order_id),
       mark_sent: true,
@@ -450,50 +454,59 @@ onMounted(load)
       <div v-if="bulkPanel" class="mb-6 bg-white rounded-xl p-5 shadow-sm border border-brand/20">
         <div class="flex flex-wrap items-start justify-between gap-3 mb-3">
           <div>
-            <h2 class="font-semibold">Send to all numbers</h2>
+            <h2 class="font-semibold">Send to all — one number at a time</h2>
             <p class="text-sm text-muted mt-1">
-              Opens every chat one after another (needed so each number opens). Prefer WhatsApp; use SMS/Messages if WhatsApp is not available.
+              WhatsApp can only open one chat at a time. Open → send in WhatsApp → Next number. Use SMS if WhatsApp is not available.
             </p>
           </div>
-          <button type="button" class="text-sm text-muted" :disabled="bulkRunning" @click="closeBulkPanel">Close</button>
+          <button type="button" class="text-sm text-muted" @click="closeBulkPanel">Close</button>
         </div>
-        <div class="flex flex-wrap gap-2 mb-4">
-          <button
-            type="button"
-            class="bg-brand text-white px-4 py-2 rounded-lg text-sm disabled:opacity-60"
-            :disabled="bulkRunning || !bulkLinks.length"
-            @click="runBulkOpen('whatsapp')"
-          >
-            {{ bulkRunning && bulkChannel === 'whatsapp' ? `Opening WhatsApp ${bulkIndex}/${bulkLinks.length}…` : `Open all via WhatsApp (${bulkLinks.length})` }}
-          </button>
-          <button
-            type="button"
-            class="bg-stone-800 text-white px-4 py-2 rounded-lg text-sm disabled:opacity-60"
-            :disabled="bulkRunning || !bulkLinks.length"
-            @click="runBulkOpen('sms')"
-          >
-            {{ bulkRunning && bulkChannel === 'sms' ? `Opening SMS ${bulkIndex}/${bulkLinks.length}…` : `Open all via SMS (${bulkLinks.length})` }}
-          </button>
-          <button
-            v-if="bulkRunning"
-            type="button"
-            class="px-4 py-2 rounded-lg border text-sm"
-            @click="bulkStop = true"
-          >
-            Stop
-          </button>
+
+        <div v-if="bulkFinished" class="rounded-lg bg-emerald-50 text-emerald-800 px-4 py-3 text-sm mb-3">
+          Finished {{ bulkDoneIds.length }} opened / {{ bulkSkippedIds.length }} skipped / {{ bulkTotal }} total.
+          <button type="button" class="text-brand ml-2" @click="closeBulkPanel">Close</button>
         </div>
+
+        <div v-else-if="bulkCurrent" class="rounded-lg border border-stone-200 p-4 mb-4">
+          <div class="text-xs text-muted uppercase tracking-wide mb-1">Recipient {{ bulkProgress }}</div>
+          <div class="text-lg font-semibold">{{ bulkCurrent.name || bulkCurrent.reference || 'Customer' }}</div>
+          <div class="text-sm text-stone-700 mt-1">{{ bulkCurrent.phone_display || bulkCurrent.phone }}</div>
+          <p class="text-xs text-muted mt-2 whitespace-pre-wrap line-clamp-3">{{ bulkCurrent.message }}</p>
+          <div class="flex flex-wrap gap-2 mt-4">
+            <button type="button" class="bg-brand text-white px-4 py-2 rounded-lg text-sm disabled:opacity-60" :disabled="sending" @click="openCurrentBulk('whatsapp')">
+              Open WhatsApp
+            </button>
+            <button type="button" class="bg-stone-800 text-white px-4 py-2 rounded-lg text-sm disabled:opacity-60" :disabled="sending" @click="openCurrentBulk('sms')">
+              Open SMS
+            </button>
+            <button type="button" class="px-4 py-2 rounded-lg border text-sm" :disabled="sending" @click="goNextBulk">
+              Next number →
+            </button>
+            <button type="button" class="px-4 py-2 text-sm text-muted" :disabled="sending" @click="skipCurrentBulk">
+              Skip
+            </button>
+            <button v-if="bulkIndex > 0" type="button" class="px-4 py-2 text-sm text-muted" :disabled="sending" @click="goPrevBulk">
+              ← Back
+            </button>
+          </div>
+        </div>
+
         <p v-if="bulkMissing" class="text-xs text-amber-700 mb-3">{{ bulkMissing }} order(s) have no phone number.</p>
-        <ul class="max-h-64 overflow-auto divide-y border rounded-lg">
-          <li v-for="(link, idx) in bulkLinks" :key="link.order_id" class="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-sm">
+        <ul class="max-h-48 overflow-auto divide-y border rounded-lg text-sm">
+          <li
+            v-for="(link, idx) in bulkLinks"
+            :key="link.order_id"
+            class="flex flex-wrap items-center justify-between gap-2 px-3 py-2"
+            :class="idx === bulkIndex && !bulkFinished ? 'bg-amber-50' : ''"
+          >
             <div>
-              <span class="font-medium">{{ link.name || link.reference || `#${link.order_id}` }}</span>
+              <span class="text-muted mr-2">{{ idx + 1 }}.</span>
+              <span class="font-medium">{{ link.name || link.reference }}</span>
               <span class="text-muted ml-2">{{ link.phone_display || link.phone }}</span>
             </div>
-            <div class="flex gap-3">
-              <button type="button" class="text-brand text-xs" :disabled="bulkRunning" @click="openBulkAt(idx, 'whatsapp')">WhatsApp</button>
-              <button type="button" class="text-stone-700 text-xs" :disabled="bulkRunning" @click="openBulkAt(idx, 'sms')">SMS</button>
-            </div>
+            <span class="text-xs" :class="bulkDoneIds.includes(link.order_id) ? 'text-emerald-700' : bulkSkippedIds.includes(link.order_id) ? 'text-stone-400' : 'text-muted'">
+              {{ bulkDoneIds.includes(link.order_id) ? 'Opened' : bulkSkippedIds.includes(link.order_id) ? 'Skipped' : idx === bulkIndex ? 'Current' : 'Waiting' }}
+            </span>
           </li>
         </ul>
       </div>
