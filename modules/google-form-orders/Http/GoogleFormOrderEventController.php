@@ -7,9 +7,11 @@ use App\Models\GoogleFormOrderEvent;
 use App\Models\GoogleFormOrderUpdate;
 use App\Services\GoogleFormOrderImportService;
 use App\Services\WhatsAppMessageService;
+use App\Support\EnsureGoogleFormOrderTables;
 use App\Support\RecordDates;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 
 class GoogleFormOrderEventController extends Controller
 {
@@ -20,6 +22,8 @@ class GoogleFormOrderEventController extends Controller
 
     public function index(): JsonResponse
     {
+        EnsureGoogleFormOrderTables::run();
+
         $events = GoogleFormOrderEvent::query()
             ->withCount([
                 'orders',
@@ -34,6 +38,8 @@ class GoogleFormOrderEventController extends Controller
 
     public function store(Request $request): JsonResponse
     {
+        EnsureGoogleFormOrderTables::run();
+
         $data = $this->validated($request);
         if (empty($data['confirmation_template'])) {
             $data['confirmation_template'] = GoogleFormOrderEvent::defaultConfirmationTemplate();
@@ -192,14 +198,39 @@ class GoogleFormOrderEventController extends Controller
 
     private function validated(Request $request, bool $updating = false): array
     {
-        return $request->validate([
+        // Browsers may send HH:MM:SS from <input type="time">.
+        foreach (['start_time', 'end_time'] as $field) {
+            $value = $request->input($field);
+            if (is_string($value) && preg_match('/^\d{1,2}:\d{2}(:\d{2})?$/', $value)) {
+                $parts = explode(':', $value);
+                $request->merge([
+                    $field => sprintf('%02d:%02d', (int) $parts[0], (int) $parts[1]),
+                ]);
+            }
+        }
+
+        if (is_string($request->input('event_date'))) {
+            $request->merge([
+                'event_date' => substr($request->input('event_date'), 0, 10),
+            ]);
+        }
+
+        $data = $request->validate([
             'name' => ($updating ? 'sometimes|' : '').'required|string|max:255',
-            'location' => ($updating ? 'sometimes|' : '').'required|string|max:255',
+            'location' => ($updating ? 'sometimes|' : '').'required|string|max:500',
             'event_date' => array_merge($updating ? ['sometimes'] : [], RecordDates::dateRules()),
             'start_time' => ($updating ? 'sometimes|' : '').'required|date_format:H:i',
-            'end_time' => ($updating ? 'sometimes|' : '').'required|date_format:H:i|after:start_time',
+            'end_time' => ($updating ? 'sometimes|' : '').'required|date_format:H:i',
             'confirmation_template' => 'nullable|string',
             'notes' => 'nullable|string',
         ]);
+
+        if (isset($data['start_time'], $data['end_time']) && $data['end_time'] <= $data['start_time']) {
+            throw ValidationException::withMessages([
+                'end_time' => ['End time must be after start time.'],
+            ]);
+        }
+
+        return $data;
     }
 }

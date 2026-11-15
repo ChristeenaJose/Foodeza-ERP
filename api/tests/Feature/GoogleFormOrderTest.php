@@ -36,6 +36,21 @@ class GoogleFormOrderTest extends TestCase
             ->assertJsonPath('confirmation_template', 'Hi {name}, your order placed, please collect {date} {time} {location}');
     }
 
+    public function test_event_accepts_browser_time_with_seconds(): void
+    {
+        $this->postJson('/api/google-form-order-events', [
+            'name' => 'Kehl Foodtruck Day',
+            'location' => 'Kath. Kirche Herz-Jesu Kork Uferstrasse 3, 77694 Kehl, Germany',
+            'event_date' => '2026-11-15 00:00:00',
+            'start_time' => '15:00:00',
+            'end_time' => '19:00:00',
+            'confirmation_template' => 'Hi {name}, your order placed, please collect {date} {time} {location}',
+        ])->assertCreated()
+            ->assertJsonPath('start_time', '15:00')
+            ->assertJsonPath('end_time', '19:00')
+            ->assertJsonPath('name', 'Kehl Foodtruck Day');
+    }
+
     public function test_order_requires_event_dates_and_items(): void
     {
         $this->postJson('/api/google-form-orders', [

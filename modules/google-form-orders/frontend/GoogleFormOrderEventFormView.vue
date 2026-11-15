@@ -52,19 +52,40 @@ onMounted(async () => {
   }
 })
 
+function normalizeTime(value: string) {
+  const m = String(value || '').match(/^(\d{1,2}):(\d{2})/)
+  if (!m) return value
+  return `${String(m[1]).padStart(2, '0')}:${m[2]}`
+}
+
+function errorMessage(e: any) {
+  const data = e?.response?.data
+  if (data?.errors && typeof data.errors === 'object') {
+    const parts = Object.values(data.errors as Record<string, string[]>).flat()
+    if (parts.length) return parts.join(' ')
+  }
+  return data?.message || e?.message || 'Could not save event.'
+}
+
 async function submit() {
   saving.value = true
   saveError.value = ''
   try {
+    const payload = {
+      ...form.value,
+      event_date: String(form.value.event_date).slice(0, 10),
+      start_time: normalizeTime(form.value.start_time),
+      end_time: normalizeTime(form.value.end_time),
+    }
     if (isEdit.value) {
-      await api.put(`/google-form-order-events/${editId.value}`, form.value)
+      await api.put(`/google-form-order-events/${editId.value}`, payload)
       await router.push(`/orders/${editId.value}`)
     } else {
-      const { data } = await api.post('/google-form-order-events', form.value)
+      const { data } = await api.post('/google-form-order-events', payload)
       await router.push(`/orders/${data.id}`)
     }
   } catch (e: any) {
-    saveError.value = e?.response?.data?.message ?? 'Could not save event.'
+    saveError.value = errorMessage(e)
   } finally {
     saving.value = false
   }
