@@ -199,15 +199,8 @@ async function savePhone(order: OrderRow, phone: string) {
   }
 }
 
-/** Open external URL via Tauri shell when available; otherwise browser/anchor. */
-async function openExternalUrl(url: string) {
-  try {
-    const shell = await import('@tauri-apps/plugin-shell')
-    await shell.open(url)
-    return
-  } catch {
-    // Not running in Tauri, or shell open denied — fall back.
-  }
+/** Open external URL (WhatsApp / browser). No Tauri import — Vite resolves modules from outside desktop/. */
+function openExternalUrl(url: string) {
   const a = document.createElement('a')
   a.href = url
   a.target = '_blank'
@@ -236,7 +229,7 @@ async function openWhatsApp(order: OrderRow) {
   try {
     const { data } = await api.get(`/google-form-orders/${order.id}/whatsapp`)
     const to = data.phone_display || data.phone
-    await openExternalUrl(data.url)
+    openExternalUrl(data.url)
     await markConfirmationsSent([order.id])
     if (order.status === 'new') {
       try {
