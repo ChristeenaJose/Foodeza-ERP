@@ -3,7 +3,6 @@
 namespace App\Providers;
 
 use Illuminate\Support\Facades\Artisan;
-use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -63,9 +62,7 @@ class AppServiceProvider extends ServiceProvider
         self::$ranDesktopMigrations = true;
 
         try {
-            if (! Schema::hasTable('google_form_order_events')) {
-                Artisan::call('migrate', ['--force' => true]);
-            }
+            Artisan::call('migrate', ['--force' => true]);
         } catch (\Throwable) {
             // Ignore during early boot / tests without a writable DB.
         }
