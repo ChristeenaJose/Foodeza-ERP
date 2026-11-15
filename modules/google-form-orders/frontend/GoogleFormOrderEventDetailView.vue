@@ -145,7 +145,8 @@ async function sendConfirmationsAll() {
     })
     openLinksSequentially(data.links ?? [])
     const missing = data.missing_phone?.length ?? 0
-    sendMsg.value = `Opened ${data.count} WhatsApp chat(s).${missing ? ` ${missing} without phone.` : ''}`
+    const from = data.links?.[0]?.from_phone ? ` Send from Foodeza WhatsApp (${data.links[0].from_phone}).` : ''
+    sendMsg.value = `Opened ${data.count} WhatsApp chat(s).${from}${missing ? ` ${missing} without phone.` : ''}`
     await load()
   } catch (e: any) {
     sendMsg.value = e?.response?.data?.message ?? 'Could not prepare messages.'

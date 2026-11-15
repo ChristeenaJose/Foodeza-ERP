@@ -21,6 +21,7 @@ class WhatsAppMessageService
             'reference' => $order->reference,
             'name' => $order->customer?->name,
             'phone' => $phone,
+            'from_phone' => $this->fromPhone(),
             'message' => $text,
             'url' => $this->url($phone, $text),
         ];
@@ -40,6 +41,7 @@ class WhatsAppMessageService
             'reference' => $order->reference,
             'name' => $order->customer?->name,
             'phone' => $phone,
+            'from_phone' => $this->fromPhone(),
             'message' => $text,
             'url' => $this->url($phone, $text),
         ];
@@ -54,12 +56,24 @@ class WhatsAppMessageService
         if ($digits === '') {
             return null;
         }
-        // Dutch local numbers starting with 0 → 31…
+
+        // 00… international prefix
+        if (str_starts_with($digits, '00')) {
+            $digits = substr($digits, 2);
+        }
+
+        // Local numbers starting with 0 → default country code (DE 49 / NL 31)
         if (str_starts_with($digits, '0')) {
-            $digits = '31'.substr($digits, 1);
+            $cc = preg_replace('/\D+/', '', (string) config('foodeza.whatsapp_default_country_code', '49')) ?: '49';
+            $digits = $cc.substr($digits, 1);
         }
 
         return $digits;
+    }
+
+    public function fromPhone(): ?string
+    {
+        return $this->normalizePhone(config('foodeza.whatsapp_from_phone') ?: config('foodeza.company_details.phone'));
     }
 
     public function url(string $phone, string $text): string

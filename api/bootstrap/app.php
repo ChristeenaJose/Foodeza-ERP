@@ -13,7 +13,7 @@ return Application::configure(basePath: dirname(__DIR__))
         apiPrefix: 'api',
     )
     ->withCommands([
-        __DIR__.'/../app/Console/Commands',
+        \App\Console\Commands\EnsureGoogleFormOrderTablesCommand::class,
     ])
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->api(prepend: [

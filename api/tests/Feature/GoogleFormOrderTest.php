@@ -178,10 +178,13 @@ class GoogleFormOrderTest extends TestCase
             ->assertOk()
             ->assertJsonPath('count', 1)
             ->assertJsonPath('links.0.name', 'Anna')
-            ->assertJsonPath('links.0.phone', '31612345678');
+            ->assertJsonPath('links.0.phone', '49612345678');
 
         $this->assertNotNull($order->fresh()->confirmation_sent_at);
-        $this->assertStringContainsString('Hi Anna, your order placed', $this->getJson("/api/google-form-orders/{$order->id}/whatsapp")->json('message'));
+        $whatsapp = $this->getJson("/api/google-form-orders/{$order->id}/whatsapp")->json();
+        $this->assertStringContainsString('Hi Anna, your order placed', $whatsapp['message']);
+        // Default country code is DE (49); 06… → 316… only when config says 31.
+        $this->assertSame('49612345678', $whatsapp['phone']);
 
         $update = $this->postJson("/api/google-form-order-events/{$event->id}/updates", [
             'title' => 'Delay',
