@@ -68,7 +68,10 @@ class AppServiceProvider extends ServiceProvider
         }
 
         try {
-            Artisan::call('migrate', ['--force' => true]);
+            // Never Artisan::call() while booting another artisan command — it breaks the console.
+            if (! $this->app->runningInConsole()) {
+                Artisan::call('migrate', ['--force' => true]);
+            }
             // Direct create if migrate was skipped (older migration already recorded).
             EnsureGoogleFormOrderTables::run();
         } catch (\Throwable) {
