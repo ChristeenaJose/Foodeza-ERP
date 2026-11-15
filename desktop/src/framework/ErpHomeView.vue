@@ -33,7 +33,7 @@ const modules = [
   {
     to: '/orders',
     title: 'Google Form orders',
-    description: 'Orders submitted through the Google Form',
+    description: 'Events, form uploads, and WhatsApp order messages',
     letter: 'Gf',
   },
 ]

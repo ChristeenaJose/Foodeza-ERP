@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class GoogleFormOrder extends Model
 {
     protected $fillable = [
+        'event_id',
         'reference',
         'customer_id',
         'submitted_on',
@@ -18,6 +19,8 @@ class GoogleFormOrder extends Model
         'location',
         'status',
         'form_response_id',
+        'raw_payload',
+        'confirmation_sent_at',
         'notes',
     ];
 
@@ -25,10 +28,17 @@ class GoogleFormOrder extends Model
         'submitted_on' => 'date',
         'event_date' => 'date',
         'guest_count' => 'integer',
+        'raw_payload' => 'array',
+        'confirmation_sent_at' => 'datetime',
     ];
 
     public function customer(): BelongsTo
     {
         return $this->belongsTo(Customer::class);
+    }
+
+    public function event(): BelongsTo
+    {
+        return $this->belongsTo(GoogleFormOrderEvent::class, 'event_id');
     }
 }

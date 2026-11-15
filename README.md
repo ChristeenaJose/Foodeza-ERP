@@ -74,7 +74,7 @@ Each module is separate inside this ERP:
 - **Bookings** — catering, food truck, lunch, and meal box bookings
 - **Inventory** — ingredients, packaging, and stock levels
 - **Menu management** — products, menus, packages, pricing, and availability
-- **Google Form orders** — orders submitted through the Google Form
+- **Google Form orders** — event plans, CSV/XLSX form uploads, and WhatsApp confirmations
 
 ## Foodeza services
 
