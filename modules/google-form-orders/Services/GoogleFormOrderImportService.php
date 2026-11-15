@@ -51,6 +51,7 @@ class GoogleFormOrderImportService
                     'items' => $mapped['items'],
                     'guest_count' => $mapped['guest_count'],
                     'location' => $mapped['location'] ?: $event->location,
+                    'whatsapp_phone' => $mapped['customer_phone'] ?: null,
                     'raw_payload' => $mapped['raw_payload'],
                     'notes' => $mapped['notes'],
                 ];
@@ -59,6 +60,10 @@ class GoogleFormOrderImportService
                     // Keep cancelled status unless the row explicitly sets something else via notes/status later.
                     if ($existing->status !== 'cancelled') {
                         $payload['status'] = $existing->status ?: 'new';
+                    }
+                    // Keep a manually edited WhatsApp number unless the CSV includes a phone.
+                    if (($mapped['customer_phone'] ?? '') === '' && $existing->whatsapp_phone) {
+                        unset($payload['whatsapp_phone']);
                     }
                     $existing->update($payload);
                     $updated++;

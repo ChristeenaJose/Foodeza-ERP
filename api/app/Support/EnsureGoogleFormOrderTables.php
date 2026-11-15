@@ -57,6 +57,7 @@ class EnsureGoogleFormOrderTables
                 $table->text('items');
                 $table->unsignedInteger('guest_count')->nullable();
                 $table->string('location')->nullable();
+                $table->string('whatsapp_phone', 50)->nullable();
                 $table->string('status')->default('new');
                 $table->string('form_response_id');
                 $table->json('raw_payload')->nullable();
@@ -66,6 +67,10 @@ class EnsureGoogleFormOrderTables
 
                 $table->unique(['event_id', 'form_response_id']);
                 $table->unique('reference');
+            });
+        } elseif (! Schema::hasColumn('google_form_orders', 'whatsapp_phone')) {
+            Schema::table('google_form_orders', function (Blueprint $table) {
+                $table->string('whatsapp_phone', 50)->nullable()->after('location');
             });
         }
     }

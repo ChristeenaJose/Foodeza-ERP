@@ -158,6 +158,41 @@ class GoogleFormOrderTest extends TestCase
             ->assertJsonPath('items', 'Sadya for 24');
     }
 
+    public function test_updated_whatsapp_phone_is_used_when_sending(): void
+    {
+        $event = $this->makeEvent();
+        $customer = Customer::create(['name' => 'Test Customer', 'phone' => '015200000000']);
+        $order = GoogleFormOrder::create([
+            'event_id' => $event->id,
+            'reference' => 'GF-2026-0099',
+            'customer_id' => $customer->id,
+            'submitted_on' => '2026-11-10',
+            'event_date' => '2026-11-20',
+            'service_type' => 'Meal Box Delivery',
+            'items' => '1 box',
+            'status' => 'new',
+            'form_response_id' => 'resp-phone',
+            'whatsapp_phone' => '015200000000',
+        ]);
+
+        $this->putJson("/api/google-form-orders/{$order->id}", [
+            'event_id' => $event->id,
+            'submitted_on' => '2026-11-10',
+            'service_type' => 'Meal Box Delivery',
+            'items' => '1 box',
+            'status' => 'new',
+            'customer_name' => 'Test Customer',
+            'whatsapp_phone' => '015237221698',
+            'form_response_id' => 'resp-phone',
+        ])->assertOk()
+            ->assertJsonPath('whatsapp_phone', '015237221698');
+
+        $this->getJson("/api/google-form-orders/{$order->id}/whatsapp")
+            ->assertOk()
+            ->assertJsonPath('phone', '4915237221698')
+            ->assertJsonPath('phone_display', '015237221698');
+    }
+
     public function test_confirmation_and_update_messages_are_prepared(): void
     {
         $event = $this->makeEvent();

@@ -9,38 +9,31 @@ class WhatsAppMessageService
 {
     public function confirmationLink(GoogleFormOrderEvent $event, GoogleFormOrder $order): ?array
     {
-        $phone = $this->normalizePhone($order->customer?->phone);
-        if (! $phone) {
-            return null;
-        }
-
-        $text = $event->renderMessage($event->confirmation_template, $order);
-
-        return [
-            'order_id' => $order->id,
-            'reference' => $order->reference,
-            'name' => $order->customer?->name,
-            'phone' => $phone,
-            'from_phone' => $this->fromPhone(),
-            'message' => $text,
-            'url' => $this->url($phone, $text),
-        ];
+        return $this->linkFor($event, $order, $event->confirmation_template);
     }
 
     public function updateLink(GoogleFormOrderEvent $event, GoogleFormOrder $order, string $updateMessage): ?array
     {
-        $phone = $this->normalizePhone($order->customer?->phone);
+        return $this->linkFor($event, $order, $updateMessage);
+    }
+
+    private function linkFor(GoogleFormOrderEvent $event, GoogleFormOrder $order, string $template): ?array
+    {
+        // Prefer order-level WhatsApp number (edited per order), then customer phone.
+        $rawPhone = trim((string) ($order->whatsapp_phone ?: $order->customer?->phone ?: ''));
+        $phone = $this->normalizePhone($rawPhone !== '' ? $rawPhone : null);
         if (! $phone) {
             return null;
         }
 
-        $text = $event->renderMessage($updateMessage, $order);
+        $text = $event->renderMessage($template, $order);
 
         return [
             'order_id' => $order->id,
             'reference' => $order->reference,
             'name' => $order->customer?->name,
             'phone' => $phone,
+            'phone_display' => $rawPhone,
             'from_phone' => $this->fromPhone(),
             'message' => $text,
             'url' => $this->url($phone, $text),

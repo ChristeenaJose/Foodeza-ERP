@@ -17,6 +17,7 @@ class GoogleFormOrder extends Model
         'items',
         'guest_count',
         'location',
+        'whatsapp_phone',
         'status',
         'form_response_id',
         'raw_payload',

@@ -20,6 +20,7 @@ const form = ref({
   customer_name: '',
   customer_email: '',
   customer_phone: '',
+  whatsapp_phone: '',
   service_type: '',
   items: '',
   guest_count: '' as string | number,
@@ -46,6 +47,7 @@ onMounted(async () => {
       customer_name: data.customer?.name ?? '',
       customer_email: data.customer?.email ?? '',
       customer_phone: data.customer?.phone ?? '',
+      whatsapp_phone: data.whatsapp_phone ?? data.customer?.phone ?? '',
       service_type: data.service_type ?? metaRes.data.services?.[0] ?? '',
       items: data.items ?? '',
       guest_count: data.guest_count ?? '',
@@ -73,6 +75,8 @@ async function submit() {
       event_id: eventId.value,
       guest_count: emptyToNull(form.value.guest_count),
       form_response_id: form.value.form_response_id || null,
+      whatsapp_phone: form.value.whatsapp_phone || form.value.customer_phone || null,
+      customer_phone: form.value.whatsapp_phone || form.value.customer_phone || null,
     }
     await api.put(`/google-form-orders/${editId.value}`, payload)
     await router.push(eventId.value ? `/orders/${eventId.value}` : '/orders')
@@ -106,7 +110,11 @@ async function submit() {
       <label class="block"><span class="text-sm font-medium">Customer</span><input v-model="form.customer_name" class="mt-1 w-full border rounded-lg px-3 py-2" /></label>
       <div class="grid grid-cols-2 gap-4">
         <label class="block"><span class="text-sm font-medium">Email</span><input v-model="form.customer_email" type="email" class="mt-1 w-full border rounded-lg px-3 py-2" /></label>
-        <label class="block"><span class="text-sm font-medium">Phone (WhatsApp)</span><input v-model="form.customer_phone" class="mt-1 w-full border rounded-lg px-3 py-2" /></label>
+        <label class="block">
+          <span class="text-sm font-medium">WhatsApp number</span>
+          <input v-model="form.whatsapp_phone" class="mt-1 w-full border rounded-lg px-3 py-2" placeholder="015237221698" />
+          <span class="text-xs text-muted mt-1 block">This exact number is used when you click Send.</span>
+        </label>
       </div>
       <label class="block"><span class="text-sm font-medium">Order details</span><textarea v-model="form.items" rows="4" required class="mt-1 w-full border rounded-lg px-3 py-2" /></label>
       <div class="grid grid-cols-2 gap-4">

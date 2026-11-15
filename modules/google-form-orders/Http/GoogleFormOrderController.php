@@ -53,16 +53,18 @@ class GoogleFormOrderController extends Controller
         $data = $this->validated($request);
         $event = GoogleFormOrderEvent::findOrFail($data['event_id']);
 
+        $phone = trim((string) ($data['whatsapp_phone'] ?? $data['customer_phone'] ?? ''));
         $data['customer_id'] = $this->contacts->findOrCreateCustomer(
             $data['customer_name'] ?? null,
             $data['customer_id'] ?? null,
             [
                 'email' => $data['customer_email'] ?? null,
-                'phone' => $data['customer_phone'] ?? null,
+                'phone' => $phone !== '' ? $phone : null,
             ]
         );
         $data['event_date'] = $event->event_date->format('Y-m-d');
         $data['location'] = $data['location'] ?? $event->location;
+        $data['whatsapp_phone'] = $phone !== '' ? $phone : null;
         $data['reference'] = $this->nextReference($data['submitted_on']);
         $data = $this->prepare($data);
 
@@ -74,14 +76,18 @@ class GoogleFormOrderController extends Controller
     public function update(Request $request, GoogleFormOrder $googleFormOrder): JsonResponse
     {
         $data = $this->validated($request, $googleFormOrder);
+        $phone = array_key_exists('whatsapp_phone', $data)
+            ? trim((string) ($data['whatsapp_phone'] ?? ''))
+            : trim((string) ($data['customer_phone'] ?? $googleFormOrder->whatsapp_phone ?? ''));
         $data['customer_id'] = $this->contacts->findOrCreateCustomer(
             $data['customer_name'] ?? null,
             $data['customer_id'] ?? $googleFormOrder->customer_id,
             [
                 'email' => $data['customer_email'] ?? null,
-                'phone' => $data['customer_phone'] ?? null,
+                'phone' => $phone !== '' ? $phone : null,
             ]
         );
+        $data['whatsapp_phone'] = $phone !== '' ? $phone : null;
         $data = $this->prepare($data);
 
         $googleFormOrder->update($data);
@@ -144,6 +150,7 @@ class GoogleFormOrderController extends Controller
             'items' => 'required|string',
             'guest_count' => 'nullable|integer|min:0',
             'location' => 'nullable|string|max:255',
+            'whatsapp_phone' => 'nullable|string|max:50',
             'status' => 'required|in:'.implode(',', array_keys(config('foodeza.google_form_order_statuses'))),
             'form_response_id' => [
                 'nullable',
@@ -172,6 +179,10 @@ class GoogleFormOrderController extends Controller
         }
         $data['form_response_id'] = $responseId;
         unset($data['customer_name'], $data['customer_email'], $data['customer_phone']);
+        if (array_key_exists('whatsapp_phone', $data)) {
+            $phone = trim((string) ($data['whatsapp_phone'] ?? ''));
+            $data['whatsapp_phone'] = $phone !== '' ? $phone : null;
+        }
 
         return $data;
     }

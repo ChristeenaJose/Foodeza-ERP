@@ -11,6 +11,7 @@ type OrderRow = {
   status: string
   guest_count?: number | null
   location?: string | null
+  whatsapp_phone?: string | null
   confirmation_sent_at?: string | null
   customer?: { name?: string; phone?: string; email?: string } | null
 }
@@ -118,8 +119,31 @@ async function cancelOrder(order: OrderRow) {
   event.value.orders = event.value.orders.map((o) => (o.id === order.id ? { ...o, ...data } : o))
 }
 
+function orderPhone(order: OrderRow) {
+  return order.whatsapp_phone || order.customer?.phone || ''
+}
+
+async function savePhone(order: OrderRow, phone: string) {
+  const { data } = await api.put(`/google-form-orders/${order.id}`, {
+    event_id: event.value?.id,
+    submitted_on: String(order.submitted_on).slice(0, 10),
+    service_type: (order as any).service_type || undefined,
+    items: order.items,
+    status: order.status,
+    customer_name: order.customer?.name || null,
+    customer_email: order.customer?.email || null,
+    customer_phone: phone || null,
+    whatsapp_phone: phone || null,
+    guest_count: order.guest_count ?? null,
+    location: order.location ?? null,
+  })
+  if (!event.value) return
+  event.value.orders = event.value.orders.map((o) => (o.id === order.id ? { ...o, ...data } : o))
+}
+
 async function openWhatsApp(order: OrderRow) {
   const { data } = await api.get(`/google-form-orders/${order.id}/whatsapp`)
+  sendMsg.value = `Opening chat TO ${data.phone_display || data.phone} (wa.me/${data.phone}).`
   window.open(data.url, '_blank')
   await api.post(`/google-form-order-events/${eventId.value}/send-confirmations`, {
     order_ids: [order.id],
@@ -145,8 +169,8 @@ async function sendConfirmationsAll() {
     })
     openLinksSequentially(data.links ?? [])
     const missing = data.missing_phone?.length ?? 0
-    const from = data.links?.[0]?.from_phone ? ` Send from Foodeza WhatsApp (${data.links[0].from_phone}).` : ''
-    sendMsg.value = `Opened ${data.count} WhatsApp chat(s).${from}${missing ? ` ${missing} without phone.` : ''}`
+    const firstTo = data.links?.[0]?.phone_display || data.links?.[0]?.phone
+    sendMsg.value = `Opened ${data.count} WhatsApp chat(s)${firstTo ? ` — first TO ${firstTo}` : ''}.${missing ? ` ${missing} without phone.` : ''} Log into Foodeza WhatsApp to send.`
     await load()
   } catch (e: any) {
     sendMsg.value = e?.response?.data?.message ?? 'Could not prepare messages.'
@@ -288,7 +312,15 @@ onMounted(load)
               </td>
               <td class="p-3">
                 {{ o.customer?.name ?? '—' }}
-                <div class="text-xs text-muted">{{ o.customer?.phone || 'No phone' }}</div>
+                <div class="mt-1 flex items-center gap-1">
+                  <input
+                    class="border rounded px-2 py-1 text-xs w-36"
+                    :value="orderPhone(o)"
+                    placeholder="WhatsApp number"
+                    :disabled="o.status === 'cancelled'"
+                    @change="savePhone(o, ($event.target as HTMLInputElement).value)"
+                  />
+                </div>
               </td>
               <td class="p-3">
                 <div class="whitespace-pre-wrap">{{ o.items }}</div>
@@ -299,7 +331,7 @@ onMounted(load)
               </td>
               <td class="p-3 whitespace-nowrap">
                 <button
-                  v-if="o.status !== 'cancelled' && o.customer?.phone"
+                  v-if="o.status !== 'cancelled' && orderPhone(o)"
                   type="button"
                   class="text-brand text-xs"
                   @click="openWhatsApp(o)"
