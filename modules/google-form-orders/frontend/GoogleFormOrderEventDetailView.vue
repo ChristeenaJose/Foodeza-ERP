@@ -66,17 +66,70 @@ type SendLink = {
 }
 
 const bulkPanel = ref(false)
+const bulkPanelEl = ref<HTMLElement | null>(null)
 const bulkLinks = ref<SendLink[]>([])
 const bulkMissing = ref(0)
 /** 0-based index of the current recipient in the step-through queue */
 const bulkIndex = ref(0)
 const bulkDoneIds = ref<number[]>([])
 const bulkSkippedIds = ref<number[]>([])
+const bulkKind = ref<'confirmations' | 'update'>('confirmations')
+const bulkHeading = computed(() =>
+  bulkKind.value === 'update' ? 'Send update to all — one number at a time' : 'Send confirmations to all — one number at a time',
+)
 
 const bulkCurrent = computed(() => bulkLinks.value[bulkIndex.value] ?? null)
 const bulkTotal = computed(() => bulkLinks.value.length)
 const bulkProgress = computed(() => `${Math.min(bulkIndex.value + 1, bulkTotal.value)} / ${bulkTotal.value}`)
 const bulkFinished = computed(() => bulkIndex.value >= bulkLinks.value.length)
+
+function openBulkQueue(links: SendLink[], missing: number, kind: 'confirmations' | 'update') {
+  bulkLinks.value = links
+  bulkMissing.value = missing
+  bulkIndex.value = 0
+  bulkDoneIds.value = []
+  bulkSkippedIds.value = []
+  bulkKind.value = kind
+  bulkPanel.value = true
+  sendMsg.value =
+    kind === 'update'
+      ? `${links.length} numbers for this update. Open WhatsApp/SMS → send → Next number.`
+      : `${links.length} numbers ready. Open WhatsApp/SMS → send → Next number.`
+  requestAnimationFrame(() => {
+    bulkPanelEl.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  })
+}
+
+function downloadSendListCsv() {
+  if (!bulkLinks.value.length) return
+  const header = ['name', 'phone', 'reference', 'whatsapp_url', 'sms_url', 'message']
+  const rows = bulkLinks.value.map((l) =>
+    [l.name ?? '', l.phone_display || l.phone || '', l.reference ?? '', l.url, l.sms_url ?? '', l.message ?? '']
+      .map((cell) => `"${String(cell).replace(/"/g, '""')}"`)
+      .join(','),
+  )
+  const blob = new Blob([[header.join(','), ...rows].join('\n')], { type: 'text/csv;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `foodeza-${bulkKind.value}-send-list.csv`
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
+  sendMsg.value = 'Downloaded send list CSV (phone + message + WhatsApp/SMS links). Use for broadcast tools or manual send.'
+}
+
+async function copyAllPhones() {
+  const phones = bulkLinks.value.map((l) => l.phone_display || l.phone).filter(Boolean).join('\n')
+  if (!phones) return
+  try {
+    await navigator.clipboard.writeText(phones)
+    sendMsg.value = `Copied ${bulkLinks.value.length} phone number(s) to clipboard.`
+  } catch {
+    sendMsg.value = 'Could not copy phones. Download CSV instead.'
+  }
+}
 
 const statusClass: Record<string, string> = {
   new: 'bg-amber-100 text-amber-800',
@@ -303,17 +356,13 @@ async function sendConfirmationsAll() {
     const { data } = await api.post(`/google-form-order-events/${event.value.id}/send-confirmations`, {
       mark_sent: false,
     })
-    bulkLinks.value = data.links ?? []
-    bulkMissing.value = data.missing_phone?.length ?? 0
-    bulkIndex.value = 0
-    bulkDoneIds.value = []
-    bulkSkippedIds.value = []
-    if (!bulkLinks.value.length) {
-      sendMsg.value = `No phone numbers to message.${bulkMissing.value ? ` ${bulkMissing.value} missing phone.` : ''}`
+    const links = (data.links ?? []) as SendLink[]
+    const missing = data.missing_phone?.length ?? 0
+    if (!links.length) {
+      sendMsg.value = `No phone numbers to message.${missing ? ` ${missing} missing phone.` : ''}`
       return
     }
-    bulkPanel.value = true
-    sendMsg.value = `${bulkLinks.value.length} numbers ready. Open one chat, send, then click Next — WhatsApp only keeps one chat open at a time.`
+    openBulkQueue(links, missing, 'confirmations')
   } catch (e: any) {
     sendMsg.value = e?.response?.data?.message ?? 'Could not prepare messages.'
   } finally {
@@ -394,23 +443,22 @@ async function sendUpdate(update: UpdateRow) {
       `/google-form-order-events/${event.value.id}/updates/${update.id}/send`,
       { mark_sent: false },
     )
-    bulkLinks.value = (data.links ?? []).map((l: SendLink) => l)
-    bulkMissing.value = data.missing_phone?.length ?? 0
-    bulkIndex.value = 0
-    bulkDoneIds.value = []
-    bulkSkippedIds.value = []
-    if (!bulkLinks.value.length) {
-      sendMsg.value = `No phone numbers for update.${bulkMissing.value ? ` ${bulkMissing.value} missing phone.` : ''}`
+    const links = (data.links ?? []) as SendLink[]
+    const missing = data.missing_phone?.length ?? 0
+    if (!links.length) {
+      sendMsg.value = `No phone numbers for update.${missing ? ` ${missing} missing phone.` : ''}`
       return
     }
-    bulkPanel.value = true
-    sendMsg.value = `Update for ${bulkLinks.value.length} numbers. Open one, send, then Next.`
+    // Same step-through panel as confirmations (WhatsApp only opens one chat at a time).
+    openBulkQueue(links, missing, 'update')
+    // Record that the update was prepared/broadcast started (not that every chat was sent).
     await api.post(`/google-form-order-events/${event.value.id}/updates/${update.id}/send`, {
-      order_ids: bulkLinks.value.map((l) => l.order_id),
+      order_ids: links.map((l) => l.order_id),
       mark_sent: true,
     })
+    await load()
   } catch (e: any) {
-    sendMsg.value = e?.response?.data?.message ?? 'Could not send update.'
+    sendMsg.value = e?.response?.data?.message ?? 'Could not prepare update messages.'
   } finally {
     sending.value = false
   }
@@ -451,15 +499,19 @@ onMounted(load)
 
       <div v-if="sendMsg" class="mb-4 rounded-lg bg-stone-100 text-stone-800 px-4 py-3 text-sm">{{ sendMsg }}</div>
 
-      <div v-if="bulkPanel" class="mb-6 bg-white rounded-xl p-5 shadow-sm border border-brand/20">
+      <div v-if="bulkPanel" ref="bulkPanelEl" class="mb-6 bg-white rounded-xl p-5 shadow-sm border border-brand/20">
         <div class="flex flex-wrap items-start justify-between gap-3 mb-3">
           <div>
-            <h2 class="font-semibold">Send to all — one number at a time</h2>
+            <h2 class="font-semibold">{{ bulkHeading }}</h2>
             <p class="text-sm text-muted mt-1">
-              WhatsApp can only open one chat at a time. Open → send in WhatsApp → Next number. Use SMS if WhatsApp is not available.
+              Personal WhatsApp cannot send to everyone at once. Open → send → Next number. Or download the CSV / copy phones for WhatsApp Business broadcast or an SMS tool.
             </p>
           </div>
           <button type="button" class="text-sm text-muted" @click="closeBulkPanel">Close</button>
+        </div>
+        <div class="flex flex-wrap gap-2 mb-4">
+          <button type="button" class="px-3 py-1.5 rounded-lg border text-sm" @click="downloadSendListCsv">Download send list (CSV)</button>
+          <button type="button" class="px-3 py-1.5 rounded-lg border text-sm" @click="copyAllPhones">Copy all phones</button>
         </div>
 
         <div v-if="bulkFinished" class="rounded-lg bg-emerald-50 text-emerald-800 px-4 py-3 text-sm mb-3">
