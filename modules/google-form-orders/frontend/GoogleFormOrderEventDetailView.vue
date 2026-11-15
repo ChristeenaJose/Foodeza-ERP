@@ -54,6 +54,25 @@ const editingTemplate = ref(false)
 const templateDraft = ref('')
 const savingTemplate = ref(false)
 
+type SendLink = {
+  order_id: number
+  reference?: string
+  name?: string | null
+  phone?: string
+  phone_display?: string
+  message?: string
+  url: string
+  sms_url?: string
+}
+
+const bulkPanel = ref(false)
+const bulkLinks = ref<SendLink[]>([])
+const bulkMissing = ref(0)
+const bulkIndex = ref(0)
+const bulkChannel = ref<'whatsapp' | 'sms'>('whatsapp')
+const bulkRunning = ref(false)
+const bulkStop = ref(false)
+
 const statusClass: Record<string, string> = {
   new: 'bg-amber-100 text-amber-800',
   confirmed: 'bg-emerald-100 text-emerald-800',
@@ -211,8 +230,15 @@ async function savePhone(order: OrderRow, phone: string) {
   }
 }
 
-/** Open wa.me via anchor — works in desktop/Tauri where window.open often returns null. */
-function openWhatsAppUrl(url: string) {
+/** Open external URL via Tauri shell when available; otherwise browser/anchor. */
+async function openExternalUrl(url: string) {
+  try {
+    const shell = await import('@tauri-apps/plugin-shell')
+    await shell.open(url)
+    return
+  } catch {
+    // Not running in Tauri, or shell open denied — fall back.
+  }
   const a = document.createElement('a')
   a.href = url
   a.target = '_blank'
@@ -223,8 +249,13 @@ function openWhatsAppUrl(url: string) {
   try {
     window.open(url, '_blank')
   } catch {
-    // ignore — anchor click is the primary path
+    // ignore
   }
+}
+
+function linkForChannel(link: SendLink, channel: 'whatsapp' | 'sms') {
+  if (channel === 'sms') return link.sms_url || `sms:+${link.phone}&body=${encodeURIComponent(link.message || '')}`
+  return link.url
 }
 
 async function markConfirmationsSent(orderIds: number[]) {
@@ -241,18 +272,16 @@ async function openWhatsApp(order: OrderRow) {
   try {
     const { data } = await api.get(`/google-form-orders/${order.id}/whatsapp`)
     const to = data.phone_display || data.phone
-    openWhatsAppUrl(data.url)
-    // Mark as sent → button becomes "Send again", WA sent checkbox checked.
-    // If it did not actually send, uncheck on Edit order (or WA sent column).
+    await openExternalUrl(data.url)
     await markConfirmationsSent([order.id])
     if (order.status === 'new') {
       try {
         await api.patch(`/google-form-orders/${order.id}/status`, { status: 'confirmed' })
       } catch {
-        // status tick is optional
+        // optional
       }
     }
-    sendMsg.value = `Opened for ${to} and marked as sent. If not sent, Edit order → uncheck “WhatsApp confirmation sent”.`
+    sendMsg.value = `Opened WhatsApp for ${to}. If not sent, Edit → uncheck “WhatsApp message sent”, or use SMS from Send to all.`
     await load()
   } catch (e: any) {
     sendMsg.value = e?.response?.data?.message ?? 'Could not open WhatsApp.'
@@ -261,39 +290,78 @@ async function openWhatsApp(order: OrderRow) {
   }
 }
 
-function openLinksSequentially(links: { url: string; order_id?: number }[]) {
-  const openedIds: number[] = []
-  for (const link of links) {
-    if (!link.url) continue
-    openWhatsAppUrl(link.url)
-    if (link.order_id) openedIds.push(link.order_id)
-  }
-  return openedIds
+async function openOneBulkLink(link: SendLink, channel: 'whatsapp' | 'sms') {
+  await openExternalUrl(linkForChannel(link, channel))
 }
 
 async function sendConfirmationsAll() {
   if (!event.value) return
-  if (!confirm(`Open WhatsApp confirmation for ${activeOrders.value.length} order(s)?`)) return
   sending.value = true
   sendMsg.value = ''
   try {
     const { data } = await api.post(`/google-form-order-events/${event.value.id}/send-confirmations`, {
       mark_sent: false,
     })
-    const openedIds = openLinksSequentially(data.links ?? [])
-    const missing = data.missing_phone?.length ?? 0
-    if (!openedIds.length) {
-      sendMsg.value = `No messages to open.${missing ? ` ${missing} without phone.` : ''}`
+    bulkLinks.value = data.links ?? []
+    bulkMissing.value = data.missing_phone?.length ?? 0
+    bulkIndex.value = 0
+    bulkChannel.value = 'whatsapp'
+    bulkStop.value = false
+    if (!bulkLinks.value.length) {
+      sendMsg.value = `No phone numbers to message.${bulkMissing.value ? ` ${bulkMissing.value} missing phone.` : ''}`
       return
     }
-    await markConfirmationsSent(openedIds)
-    sendMsg.value = `Opened ${openedIds.length} and marked as sent.${missing ? ` ${missing} without phone.` : ''} If one failed, Edit that order → uncheck “WhatsApp confirmation sent”.`
-    await load()
+    bulkPanel.value = true
+    sendMsg.value = `${bulkLinks.value.length} recipient(s) ready. Open all via WhatsApp (or SMS if WhatsApp is not available).`
   } catch (e: any) {
     sendMsg.value = e?.response?.data?.message ?? 'Could not prepare messages.'
   } finally {
     sending.value = false
   }
+}
+
+function closeBulkPanel() {
+  bulkStop.value = true
+  bulkRunning.value = false
+  bulkPanel.value = false
+}
+
+async function runBulkOpen(channel: 'whatsapp' | 'sms') {
+  if (!bulkLinks.value.length || bulkRunning.value) return
+  bulkChannel.value = channel
+  bulkRunning.value = true
+  bulkStop.value = false
+  const openedIds: number[] = []
+  const delayMs = 1200
+  for (let i = 0; i < bulkLinks.value.length; i++) {
+    if (bulkStop.value) break
+    bulkIndex.value = i + 1
+    const link = bulkLinks.value[i]
+    try {
+      await openOneBulkLink(link, channel)
+      openedIds.push(link.order_id)
+    } catch {
+      // continue with next number
+    }
+    if (i < bulkLinks.value.length - 1 && !bulkStop.value) {
+      await new Promise((r) => setTimeout(r, delayMs))
+    }
+  }
+  if (openedIds.length) {
+    await markConfirmationsSent(openedIds)
+    await load()
+  }
+  bulkRunning.value = false
+  const label = channel === 'sms' ? 'SMS/Messages' : 'WhatsApp'
+  sendMsg.value = `Opened ${openedIds.length}/${bulkLinks.value.length} via ${label}.${bulkMissing.value ? ` ${bulkMissing.value} without phone.` : ''} Tap Send in each chat. If one failed, Edit → uncheck WA sent.`
+}
+
+async function openBulkAt(index: number, channel: 'whatsapp' | 'sms') {
+  const link = bulkLinks.value[index]
+  if (!link) return
+  await openOneBulkLink(link, channel)
+  await markConfirmationsSent([link.order_id])
+  await load()
 }
 
 async function createUpdate() {
@@ -314,7 +382,6 @@ async function createUpdate() {
 
 async function sendUpdate(update: UpdateRow) {
   if (!event.value) return
-  if (!confirm(`Send this update to ${activeOrders.value.length} active order(s) via WhatsApp?`)) return
   sending.value = true
   sendMsg.value = ''
   try {
@@ -322,18 +389,22 @@ async function sendUpdate(update: UpdateRow) {
       `/google-form-order-events/${event.value.id}/updates/${update.id}/send`,
       { mark_sent: false },
     )
-    const openedIds = openLinksSequentially(data.links ?? [])
-    const missing = data.missing_phone?.length ?? 0
-    if (!openedIds.length) {
-      sendMsg.value = `No update chats to open.${missing ? ` ${missing} without phone.` : ''}`
+    bulkLinks.value = (data.links ?? []).map((l: SendLink) => l)
+    bulkMissing.value = data.missing_phone?.length ?? 0
+    bulkIndex.value = 0
+    bulkChannel.value = 'whatsapp'
+    bulkStop.value = false
+    if (!bulkLinks.value.length) {
+      sendMsg.value = `No phone numbers for update.${bulkMissing.value ? ` ${bulkMissing.value} missing phone.` : ''}`
       return
     }
+    bulkPanel.value = true
+    sendMsg.value = `Update ready for ${bulkLinks.value.length} recipient(s). Open all via WhatsApp or SMS.`
+    // Mark update last_sent when user finishes opening from panel — also mark now for tracking.
     await api.post(`/google-form-order-events/${event.value.id}/updates/${update.id}/send`, {
-      order_ids: openedIds,
+      order_ids: bulkLinks.value.map((l) => l.order_id),
       mark_sent: true,
     })
-    sendMsg.value = `Update opened for ${openedIds.length}.${missing ? ` ${missing} without phone.` : ''}`
-    await load()
   } catch (e: any) {
     sendMsg.value = e?.response?.data?.message ?? 'Could not send update.'
   } finally {
@@ -375,6 +446,57 @@ onMounted(load)
       </div>
 
       <div v-if="sendMsg" class="mb-4 rounded-lg bg-stone-100 text-stone-800 px-4 py-3 text-sm">{{ sendMsg }}</div>
+
+      <div v-if="bulkPanel" class="mb-6 bg-white rounded-xl p-5 shadow-sm border border-brand/20">
+        <div class="flex flex-wrap items-start justify-between gap-3 mb-3">
+          <div>
+            <h2 class="font-semibold">Send to all numbers</h2>
+            <p class="text-sm text-muted mt-1">
+              Opens every chat one after another (needed so each number opens). Prefer WhatsApp; use SMS/Messages if WhatsApp is not available.
+            </p>
+          </div>
+          <button type="button" class="text-sm text-muted" :disabled="bulkRunning" @click="closeBulkPanel">Close</button>
+        </div>
+        <div class="flex flex-wrap gap-2 mb-4">
+          <button
+            type="button"
+            class="bg-brand text-white px-4 py-2 rounded-lg text-sm disabled:opacity-60"
+            :disabled="bulkRunning || !bulkLinks.length"
+            @click="runBulkOpen('whatsapp')"
+          >
+            {{ bulkRunning && bulkChannel === 'whatsapp' ? `Opening WhatsApp ${bulkIndex}/${bulkLinks.length}…` : `Open all via WhatsApp (${bulkLinks.length})` }}
+          </button>
+          <button
+            type="button"
+            class="bg-stone-800 text-white px-4 py-2 rounded-lg text-sm disabled:opacity-60"
+            :disabled="bulkRunning || !bulkLinks.length"
+            @click="runBulkOpen('sms')"
+          >
+            {{ bulkRunning && bulkChannel === 'sms' ? `Opening SMS ${bulkIndex}/${bulkLinks.length}…` : `Open all via SMS (${bulkLinks.length})` }}
+          </button>
+          <button
+            v-if="bulkRunning"
+            type="button"
+            class="px-4 py-2 rounded-lg border text-sm"
+            @click="bulkStop = true"
+          >
+            Stop
+          </button>
+        </div>
+        <p v-if="bulkMissing" class="text-xs text-amber-700 mb-3">{{ bulkMissing }} order(s) have no phone number.</p>
+        <ul class="max-h-64 overflow-auto divide-y border rounded-lg">
+          <li v-for="(link, idx) in bulkLinks" :key="link.order_id" class="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-sm">
+            <div>
+              <span class="font-medium">{{ link.name || link.reference || `#${link.order_id}` }}</span>
+              <span class="text-muted ml-2">{{ link.phone_display || link.phone }}</span>
+            </div>
+            <div class="flex gap-3">
+              <button type="button" class="text-brand text-xs" :disabled="bulkRunning" @click="openBulkAt(idx, 'whatsapp')">WhatsApp</button>
+              <button type="button" class="text-stone-700 text-xs" :disabled="bulkRunning" @click="openBulkAt(idx, 'sms')">SMS</button>
+            </div>
+          </li>
+        </ul>
+      </div>
 
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
         <div class="bg-white rounded-xl p-5 shadow-sm lg:col-span-2">

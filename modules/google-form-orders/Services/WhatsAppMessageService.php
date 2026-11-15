@@ -37,6 +37,8 @@ class WhatsAppMessageService
             'from_phone' => $this->fromPhone(),
             'message' => $text,
             'url' => $this->url($phone, $text),
+            'sms_url' => $this->smsUrl($phone, $text),
+            'channel' => 'whatsapp',
         ];
     }
 
@@ -72,5 +74,17 @@ class WhatsAppMessageService
     public function url(string $phone, string $text): string
     {
         return 'https://wa.me/'.$phone.'?text='.rawurlencode($text);
+    }
+
+    /**
+     * Native SMS / iMessage composer (fallback when WhatsApp is not available).
+     * Opens the device Messages app with the number and pre-filled text.
+     */
+    public function smsUrl(string $phone, string $text): string
+    {
+        $encoded = rawurlencode($text);
+
+        // sms:+49…&body=… works on macOS/iOS; Android accepts ?body= as well.
+        return 'sms:+'.$phone.'&body='.$encoded;
     }
 }

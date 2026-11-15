@@ -287,7 +287,9 @@ class GoogleFormOrderTest extends TestCase
             ->assertOk()
             ->assertJsonPath('count', 1)
             ->assertJsonPath('links.0.name', 'Anna')
-            ->assertJsonPath('links.0.phone', '49612345678');
+            ->assertJsonPath('links.0.phone', '49612345678')
+            ->assertJsonPath('links.0.url', 'https://wa.me/49612345678?text='.rawurlencode('Hi Anna, your order placed, please collect 20-11-2026 11:00–14:00 Foodeza kitchen'))
+            ->assertJsonPath('links.0.sms_url', 'sms:+49612345678&body='.rawurlencode('Hi Anna, your order placed, please collect 20-11-2026 11:00–14:00 Foodeza kitchen'));
 
         $this->assertNull($order->fresh()->confirmation_sent_at);
 
