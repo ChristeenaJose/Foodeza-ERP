@@ -11,7 +11,8 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        // Find new module controllers/models/services without a fresh composer classmap.
+        require_once __DIR__.'/../Support/ModuleAutoload.php';
     }
 
     /**
