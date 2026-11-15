@@ -1,5 +1,9 @@
 @import "tailwindcss";
 
+/* Module Vue files live outside desktop/ — include them so layout utilities generate. */
+@source "../../modules/**/*.{vue,js,ts}";
+@source "./**/*.{vue,js,ts,html}";
+
 @theme {
   --color-brand: #dc2626;
   --color-brand-dark: #b91c1c;

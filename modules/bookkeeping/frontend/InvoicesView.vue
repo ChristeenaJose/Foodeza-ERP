@@ -49,7 +49,6 @@ async function remove(e: Event, row: any) {
     ? `Delete ${row.invoice_number}? This will also remove linked income and payment records.`
     : `Delete ${row.invoice_number}?`
   if (!confirm(msg)) return
-  const { api } = await import('../api/client')
   await api.delete(`/invoices/${row.id}`)
   rows.value = rows.value.filter((r) => r.id !== row.id)
 }

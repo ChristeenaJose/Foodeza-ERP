@@ -103,7 +103,6 @@ function sortIndicator(key: SortKey) {
 
 async function remove(id: number) {
   if (!confirm('Delete?')) return
-  const { api } = await import('../api/client')
   await api.delete(`/incomes/${id}`)
   rows.value = rows.value.filter((r) => r.id !== id)
 }
