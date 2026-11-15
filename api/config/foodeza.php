@@ -14,14 +14,18 @@ return [
     'company_details' => [
         'address' => 'Your street and city',
         'postcode' => '1234 AB',
-        'country' => 'Netherlands',
+        'country' => 'Germany',
         'email' => 'info@foodeza.nl',
-        'phone' => '+31 6 00000000',
+        'phone' => '01744504441',
         'kvk' => 'KVK number',
         'vat_number' => 'NL000000000B01',
         'iban' => 'NL00 BANK 0000 0000 00',
         'bic' => 'BANKNL2A',
     ],
+    // Used when a phone starts with 0 (local mobile). DE=49, NL=31.
+    'whatsapp_default_country_code' => '49',
+    'whatsapp_from_phone' => '01744504441',
+
     'services' => [
         'Catering',
         'Food Truck',

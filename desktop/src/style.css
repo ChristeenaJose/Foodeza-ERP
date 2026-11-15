@@ -1,5 +1,10 @@
 @import "tailwindcss";
 
+/* Modules live outside desktop/; register them explicitly for Tailwind v4. */
+@import "../../modules/tailwind-sources.css";
+@source "../../modules";
+@source ".";
+
 @theme {
   --color-brand: #dc2626;
   --color-brand-dark: #b91c1c;

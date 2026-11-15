@@ -24,7 +24,7 @@ const inventoryNav = [
 ]
 
 const orderNav = [
-  { to: '/orders', label: 'Orders', exact: true },
+  { to: '/orders', label: 'Events', exact: true },
 ]
 
 const menuNav = [
@@ -121,8 +121,10 @@ const router = createRouter({
       meta: { module: 'Google Form orders', nav: orderNav },
       children: [
         { path: '', name: 'google-form-orders', component: () => import('@modules/google-form-orders/frontend/GoogleFormOrdersView.vue') },
-        { path: 'new', name: 'google-form-orders-new', component: () => import('@modules/google-form-orders/frontend/GoogleFormOrderFormView.vue') },
-        { path: ':id/edit', name: 'google-form-orders-edit', component: () => import('@modules/google-form-orders/frontend/GoogleFormOrderFormView.vue') },
+        { path: 'new', name: 'google-form-orders-event-new', component: () => import('@modules/google-form-orders/frontend/GoogleFormOrderEventFormView.vue') },
+        { path: 'entries/:id/edit', name: 'google-form-orders-entry-edit', component: () => import('@modules/google-form-orders/frontend/GoogleFormOrderFormView.vue') },
+        { path: ':id/edit', name: 'google-form-orders-event-edit', component: () => import('@modules/google-form-orders/frontend/GoogleFormOrderEventFormView.vue') },
+        { path: ':id', name: 'google-form-orders-event', component: () => import('@modules/google-form-orders/frontend/GoogleFormOrderEventDetailView.vue') },
       ],
     },
     { path: '/income/:pathMatch(.*)*', redirect: (to) => `/bookkeeping${to.path}` },
