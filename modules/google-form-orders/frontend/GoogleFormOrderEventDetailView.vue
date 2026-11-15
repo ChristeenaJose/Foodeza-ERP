@@ -119,6 +119,16 @@ async function toggleConfirmed(order: OrderRow, checked: boolean) {
   }
 }
 
+async function toggleWhatsappSent(order: OrderRow, sent: boolean) {
+  if (order.status === 'cancelled') return
+  try {
+    const { data } = await api.patch(`/google-form-orders/${order.id}/whatsapp-sent`, { sent })
+    await applyOrderUpdate(order.id, data)
+  } catch (e: any) {
+    sendMsg.value = e?.response?.data?.message ?? 'Could not update WhatsApp sent status.'
+  }
+}
+
 function formatDate(value?: string | null) {
   if (!value) return '—'
   return String(value).slice(0, 10)
@@ -451,13 +461,14 @@ onMounted(load)
               <th class="text-left p-3">Customer</th>
               <th class="text-left p-3">Order</th>
               <th class="text-left p-3">Status</th>
+              <th class="text-center p-3">WA sent</th>
               <th class="text-left p-3">WhatsApp</th>
               <th></th>
             </tr>
           </thead>
           <tbody>
             <tr v-if="!event.orders?.length">
-              <td colspan="7" class="p-6 text-center text-muted">No orders yet. Upload a Google Form export.</td>
+              <td colspan="8" class="p-6 text-center text-muted">No orders yet. Upload a Google Form export.</td>
             </tr>
             <tr v-for="o in event.orders" :key="o.id" class="border-t" :class="o.status === 'cancelled' ? 'opacity-60' : ''">
               <td class="p-3 text-center">
@@ -492,6 +503,16 @@ onMounted(load)
               </td>
               <td class="p-3">
                 <span class="px-2 py-0.5 rounded-full text-xs" :class="statusClass[o.status] || 'bg-stone-100'">{{ statuses[o.status] || o.status }}</span>
+              </td>
+              <td class="p-3 text-center">
+                <input
+                  type="checkbox"
+                  class="h-4 w-4 accent-brand"
+                  :checked="!!o.confirmation_sent_at"
+                  :disabled="o.status === 'cancelled'"
+                  title="WhatsApp message sent?"
+                  @change="toggleWhatsappSent(o, ($event.target as HTMLInputElement).checked)"
+                />
               </td>
               <td class="p-3 whitespace-nowrap">
                 <button

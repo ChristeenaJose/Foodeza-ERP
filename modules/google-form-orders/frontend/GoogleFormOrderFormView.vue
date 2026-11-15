@@ -26,6 +26,7 @@ const form = ref({
   guest_count: '' as string | number,
   location: '',
   status: 'new',
+  confirmation_sent: false,
   form_response_id: '',
   notes: '',
 })
@@ -53,6 +54,7 @@ onMounted(async () => {
       guest_count: data.guest_count ?? '',
       location: data.location ?? '',
       status: data.status,
+      confirmation_sent: !!data.confirmation_sent_at,
       form_response_id: data.form_response_id ?? '',
       notes: data.notes ?? '',
     }
@@ -107,6 +109,13 @@ async function submit() {
           </select>
         </label>
       </div>
+      <label class="flex items-center gap-2 rounded-lg border px-3 py-3 cursor-pointer">
+        <input v-model="form.confirmation_sent" type="checkbox" class="h-4 w-4 accent-brand" />
+        <span>
+          <span class="text-sm font-medium block">WhatsApp confirmation sent</span>
+          <span class="text-xs text-muted">Check if message was sent; uncheck to mark as not sent (Send again).</span>
+        </span>
+      </label>
       <label class="block"><span class="text-sm font-medium">Customer</span><input v-model="form.customer_name" class="mt-1 w-full border rounded-lg px-3 py-2" /></label>
       <div class="grid grid-cols-2 gap-4">
         <label class="block"><span class="text-sm font-medium">Email</span><input v-model="form.customer_email" type="email" class="mt-1 w-full border rounded-lg px-3 py-2" /></label>

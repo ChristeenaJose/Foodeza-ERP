@@ -16,6 +16,7 @@ Route::post('/google-form-order-events/{googleFormOrderEvent}/updates/{update}/s
 
 Route::post('/google-form-orders/{googleFormOrder}/cancel', [GoogleFormOrderController::class, 'cancel']);
 Route::patch('/google-form-orders/{googleFormOrder}/status', [GoogleFormOrderController::class, 'updateStatus']);
+Route::patch('/google-form-orders/{googleFormOrder}/whatsapp-sent', [GoogleFormOrderController::class, 'updateWhatsappSent']);
 Route::get('/google-form-orders/{googleFormOrder}/whatsapp', [GoogleFormOrderController::class, 'whatsapp']);
 
 Route::apiResource('google-form-orders', GoogleFormOrderController::class)

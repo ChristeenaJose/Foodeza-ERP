@@ -158,6 +158,46 @@ class GoogleFormOrderTest extends TestCase
             ->assertJsonPath('items', 'Sadya for 24');
     }
 
+    public function test_whatsapp_sent_flag_can_be_toggled(): void
+    {
+        $event = $this->makeEvent();
+        $customer = Customer::create(['name' => 'Test Customer', 'phone' => '015237221698']);
+        $order = GoogleFormOrder::create([
+            'event_id' => $event->id,
+            'reference' => 'GF-2026-0101',
+            'customer_id' => $customer->id,
+            'submitted_on' => '2026-11-10',
+            'event_date' => '2026-11-20',
+            'service_type' => 'Meal Box Delivery',
+            'items' => '1 box',
+            'status' => 'new',
+            'form_response_id' => 'resp-wa-sent',
+            'whatsapp_phone' => '015237221698',
+        ]);
+
+        $this->patchJson("/api/google-form-orders/{$order->id}/whatsapp-sent", [
+            'sent' => true,
+        ])->assertOk();
+        $this->assertNotNull($order->fresh()->confirmation_sent_at);
+
+        $this->patchJson("/api/google-form-orders/{$order->id}/whatsapp-sent", [
+            'sent' => false,
+        ])->assertOk();
+        $this->assertNull($order->fresh()->confirmation_sent_at);
+
+        $this->putJson("/api/google-form-orders/{$order->id}", [
+            'event_id' => $event->id,
+            'submitted_on' => '2026-11-10',
+            'service_type' => 'Meal Box Delivery',
+            'items' => '1 box',
+            'status' => 'confirmed',
+            'whatsapp_phone' => '015237221698',
+            'confirmation_sent' => true,
+            'form_response_id' => 'resp-wa-sent',
+        ])->assertOk();
+        $this->assertNotNull($order->fresh()->confirmation_sent_at);
+    }
+
     public function test_confirmed_checkbox_updates_status_without_clearing_phone(): void
     {
         $event = $this->makeEvent();

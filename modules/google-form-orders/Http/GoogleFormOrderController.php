@@ -88,6 +88,13 @@ class GoogleFormOrderController extends Controller
             ]
         );
         $data['whatsapp_phone'] = $phone !== '' ? $phone : null;
+        if (array_key_exists('confirmation_sent', $data)) {
+            $sent = (bool) $data['confirmation_sent'];
+            $data['confirmation_sent_at'] = $sent
+                ? ($googleFormOrder->confirmation_sent_at ?? now())
+                : null;
+            unset($data['confirmation_sent']);
+        }
         $data = $this->prepare($data, $googleFormOrder);
 
         $googleFormOrder->update($data);
@@ -109,6 +116,19 @@ class GoogleFormOrderController extends Controller
         ]);
 
         $googleFormOrder->update(['status' => $data['status']]);
+
+        return response()->json($googleFormOrder->fresh(['customer', 'event']));
+    }
+
+    public function updateWhatsappSent(Request $request, GoogleFormOrder $googleFormOrder): JsonResponse
+    {
+        $data = $request->validate([
+            'sent' => 'required|boolean',
+        ]);
+
+        $googleFormOrder->update([
+            'confirmation_sent_at' => $data['sent'] ? ($googleFormOrder->confirmation_sent_at ?? now()) : null,
+        ]);
 
         return response()->json($googleFormOrder->fresh(['customer', 'event']));
     }
@@ -163,6 +183,7 @@ class GoogleFormOrderController extends Controller
             'location' => 'nullable|string|max:255',
             'whatsapp_phone' => 'nullable|string|max:50',
             'status' => 'required|in:'.implode(',', array_keys(config('foodeza.google_form_order_statuses'))),
+            'confirmation_sent' => 'nullable|boolean',
             'form_response_id' => [
                 'nullable',
                 'string',
