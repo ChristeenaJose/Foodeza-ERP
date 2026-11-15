@@ -141,21 +141,55 @@ async function savePhone(order: OrderRow, phone: string) {
   event.value.orders = event.value.orders.map((o) => (o.id === order.id ? { ...o, ...data } : o))
 }
 
-async function openWhatsApp(order: OrderRow) {
-  const { data } = await api.get(`/google-form-orders/${order.id}/whatsapp`)
-  sendMsg.value = `Opening chat TO ${data.phone_display || data.phone} (wa.me/${data.phone}).`
-  window.open(data.url, '_blank')
-  await api.post(`/google-form-order-events/${eventId.value}/send-confirmations`, {
-    order_ids: [order.id],
-    mark_sent: true,
-  })
-  await load()
+function tryOpenWhatsApp(url: string): Window | null {
+  const win = window.open(url, '_blank')
+  // Popup blockers return null — treat as not opened.
+  return win
 }
 
-function openLinksSequentially(links: { url: string }[]) {
-  for (const link of links) {
-    window.open(link.url, '_blank')
+async function markConfirmationsSent(orderIds: number[]) {
+  if (!orderIds.length) return
+  await api.post(`/google-form-order-events/${eventId.value}/send-confirmations`, {
+    order_ids: orderIds,
+    mark_sent: true,
+  })
+}
+
+async function openWhatsApp(order: OrderRow) {
+  sending.value = true
+  sendMsg.value = ''
+  try {
+    const { data } = await api.get(`/google-form-orders/${order.id}/whatsapp`)
+    const to = data.phone_display || data.phone
+    const win = tryOpenWhatsApp(data.url)
+    if (!win) {
+      sendMsg.value = `WhatsApp did not open for ${to}. Allow pop-ups, then try again. Not marked as sent.`
+      return
+    }
+    const mark = confirm(`WhatsApp opened for ${to}.\n\nClick OK only if the chat opened and you can send.\nClick Cancel to keep status as not sent.`)
+    if (mark) {
+      await markConfirmationsSent([order.id])
+      sendMsg.value = `Marked as sent TO ${to}.`
+      await load()
+    } else {
+      sendMsg.value = `Not marked as sent for ${to}.`
+    }
+  } catch (e: any) {
+    sendMsg.value = e?.response?.data?.message ?? 'Could not open WhatsApp.'
+  } finally {
+    sending.value = false
   }
+}
+
+function openLinksSequentially(links: { url: string; order_id?: number }[]) {
+  const openedIds: number[] = []
+  let blocked = 0
+  for (const link of links) {
+    const win = tryOpenWhatsApp(link.url)
+    if (win && link.order_id) openedIds.push(link.order_id)
+    else if (!win) blocked++
+  }
+  return { openedIds, blocked }
 }
 
 async function sendConfirmationsAll() {
@@ -164,14 +198,26 @@ async function sendConfirmationsAll() {
   sending.value = true
   sendMsg.value = ''
   try {
+    // First get links without marking sent.
     const { data } = await api.post(`/google-form-order-events/${event.value.id}/send-confirmations`, {
-      mark_sent: true,
+      mark_sent: false,
     })
-    openLinksSequentially(data.links ?? [])
+    const { openedIds, blocked } = openLinksSequentially(data.links ?? [])
     const missing = data.missing_phone?.length ?? 0
-    const firstTo = data.links?.[0]?.phone_display || data.links?.[0]?.phone
-    sendMsg.value = `Opened ${data.count} WhatsApp chat(s)${firstTo ? ` — first TO ${firstTo}` : ''}.${missing ? ` ${missing} without phone.` : ''} Log into Foodeza WhatsApp to send.`
-    await load()
+    if (!openedIds.length) {
+      sendMsg.value = `No WhatsApp chats opened${blocked ? ' (pop-ups blocked)' : ''}. Not marked as sent.`
+      return
+    }
+    const mark = confirm(
+      `${openedIds.length} WhatsApp chat(s) opened${blocked ? `, ${blocked} blocked` : ''}.\n\nClick OK only if they opened and you can send.\nClick Cancel to keep status as not sent.`,
+    )
+    if (mark) {
+      await markConfirmationsSent(openedIds)
+      sendMsg.value = `Marked ${openedIds.length} as sent.${missing ? ` ${missing} without phone.` : ''}`
+      await load()
+    } else {
+      sendMsg.value = `Not marked as sent.${missing ? ` ${missing} without phone.` : ''}`
+    }
   } catch (e: any) {
     sendMsg.value = e?.response?.data?.message ?? 'Could not prepare messages.'
   } finally {
@@ -203,12 +249,27 @@ async function sendUpdate(update: UpdateRow) {
   try {
     const { data } = await api.post(
       `/google-form-order-events/${event.value.id}/updates/${update.id}/send`,
-      { mark_sent: true },
+      { mark_sent: false },
     )
-    openLinksSequentially(data.links ?? [])
+    const { openedIds, blocked } = openLinksSequentially(data.links ?? [])
     const missing = data.missing_phone?.length ?? 0
-    sendMsg.value = `Opened ${data.count} update chat(s).${missing ? ` ${missing} without phone.` : ''}`
-    await load()
+    if (!openedIds.length) {
+      sendMsg.value = `No update chats opened${blocked ? ' (pop-ups blocked)' : ''}. Not marked as sent.`
+      return
+    }
+    const mark = confirm(
+      `${openedIds.length} update chat(s) opened${blocked ? `, ${blocked} blocked` : ''}.\n\nClick OK only if they opened and you can send.`,
+    )
+    if (mark) {
+      await api.post(`/google-form-order-events/${event.value.id}/updates/${update.id}/send`, {
+        order_ids: openedIds,
+        mark_sent: true,
+      })
+      sendMsg.value = `Update marked sent to ${openedIds.length}.${missing ? ` ${missing} without phone.` : ''}`
+      await load()
+    } else {
+      sendMsg.value = `Update not marked as sent.${missing ? ` ${missing} without phone.` : ''}`
+    }
   } catch (e: any) {
     sendMsg.value = e?.response?.data?.message ?? 'Could not send update.'
   } finally {

@@ -131,12 +131,13 @@ class GoogleFormOrderEventController extends Controller
         $missingPhone = [];
         foreach ($query->get() as $order) {
             $link = $this->whatsapp->confirmationLink($googleFormOrderEvent, $order);
-            if ($link) {
-                $links[] = $link;
-                if ($request->boolean('mark_sent', true)) {
-                    $order->update(['confirmation_sent_at' => now()]);
-                }
-            } else {
+                if ($link) {
+                    $links[] = $link;
+                    // Only mark sent when the client explicitly asks (after WhatsApp actually opened).
+                    if ($request->boolean('mark_sent', false)) {
+                        $order->update(['confirmation_sent_at' => now()]);
+                    }
+                } else {
                 $missingPhone[] = [
                     'order_id' => $order->id,
                     'reference' => $order->reference,
@@ -184,7 +185,7 @@ class GoogleFormOrderEventController extends Controller
             }
         }
 
-        if ($request->boolean('mark_sent', true) && $links) {
+        if ($request->boolean('mark_sent', false) && $links) {
             $update->update(['last_sent_at' => now()]);
         }
 

@@ -215,6 +215,12 @@ class GoogleFormOrderTest extends TestCase
             ->assertJsonPath('links.0.name', 'Anna')
             ->assertJsonPath('links.0.phone', '49612345678');
 
+        $this->assertNull($order->fresh()->confirmation_sent_at);
+
+        $this->postJson("/api/google-form-order-events/{$event->id}/send-confirmations", [
+            'mark_sent' => true,
+        ])->assertOk();
+
         $this->assertNotNull($order->fresh()->confirmation_sent_at);
         $whatsapp = $this->getJson("/api/google-form-orders/{$order->id}/whatsapp")->json();
         $this->assertStringContainsString('Hi Anna, your order placed', $whatsapp['message']);
